@@ -1,0 +1,87 @@
+# ============================================================
+# tool-box 后端 · 配置样例（**不含任何密钥**）
+#
+# 用法：
+#   1) 复制为 src/main/resources/application-local.yml（或直接改 application.yml）
+#   2) 口令与密钥**必须**通过环境变量注入，不要写进文件：
+#        MYSQL_PASSWORD     —— 数据库口令（必填，缺失则启动失败）
+#        JWT_SECRET         —— 令牌签名密钥（生产必填，建议 ≥ 32 字符随机串）
+#        TOOLBOX_STORAGE_ROOT —— 工具文件存储根目录（可选，统一正斜杠）
+#        TOOLBOX_CHUNK_DIR  —— 分片临时目录（可选，GB 级上传需留足空间）
+#   3) 启动前设好环境变量；本文件仅演示"有哪些可配项、默认值是多少"
+# ============================================================
+
+server:
+  port: 8080
+  tomcat:
+    # 服务端提前拒绝（令牌失效 / 分片超限）时能"吞掉"多少请求体。
+    # Tomcat 默认仅 2MB：前端 5MB 分片被拒时吞不下剩余 body → 直接断连，
+    # 客户端只能看到"网络错误"，真实业务码丢失。故放宽到与 multipart 上限一致。
+    max-swallow-size: 1GB
+
+spring:
+  application:
+    name: toolbox
+  # ⚠️ 必须显式配置（Spring Boot 默认单片仅 1MB，会拒收前端 5MB 分片）
+  servlet:
+    multipart:
+      max-file-size: 1GB
+      max-request-size: 1GB
+  datasource:
+    # createDatabaseIfNotExist=true：首次启动自动建库（utf8mb4）
+    url: jdbc:mysql://localhost:3306/toolbox?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&connectionTimeZone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    # ⚠️ 口令严禁明文写入文件，必须走环境变量
+    password: ${MYSQL_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+toolbox:
+  jwt:
+    # ⚠️ 生产环境必须用 JWT_SECRET 覆盖，禁止使用该默认值
+    secret: ${JWT_SECRET:change-me-dev-secret-0123456789abcdefghijkl}
+    # 令牌有效期（分钟）
+    expiration-minutes: 720
+
+  # ---- WebSocket 实时通道（M-18：服务端推送「被踢下线」通知 / 弹窗）----
+  # ⚠️ 此段必须保留：缺失会导致 /ws 端点不挂、前端收不到踢人推送（无弹窗）。
+  # path 默认值即 /ws，一般无需改动；心跳参数可按联调需要调整。
+  ws:
+    path: /ws
+    heartbeat-interval: 30s
+    heartbeat-timeout: 60s
+
+  storage:
+    # 存储根路径的**兜底值**（统一正斜杠）。
+    # 实际生效顺序：① 全局设置表 storageRoot（管理员在设置页改，即时生效）→ ② 本项。
+    # 留空也可以：只要设置表里有值，或走一次 /api/system/init。
+    root: ${TOOLBOX_STORAGE_ROOT:}
+
+  upload:
+    # 分片临时目录（GB 级上传请确保该盘剩余空间充足）
+    chunk-dir: ${TOOLBOX_CHUNK_DIR:${java.io.tmpdir}/toolbox-chunks}
+    # 单文件上限默认值（10 GB）；库中存在全局设置时以设置表为准
+    max-file-size: 10737418240
+    # 分片大小参考值（5 MB）。注意：实际以客户端切分大小为准，**后端不校验单片大小**
+    chunk-size: 5242880
+    # 未合并分片的保留时长（小时）
+    chunk-retention-hours: 24
+    # 分片清理任务扫描间隔（毫秒）
+    cleanup-interval-ms: 3600000
+
+  security:
+    # 无需登录即可访问的路径（登录 / 初始化状态 / 初始化）
+    public-paths:
+      - /api/auth/login
+      - /api/system/init-status
+      - /api/system/init
+    # 允许用 ?token= 作为鉴权载体的路径（非安全上下文下的原生 <a> 下载）
+    # 仅当请求**确实携带非空 token 参数**时才放行认证过滤器，令牌有效性仍由控制器校验
+    token-auth-paths:
+      - /api/tools/*/download

@@ -1,0 +1,35 @@
+# Java build output
+target/
+build/
+out/
+*.class
+*.jar
+*.war
+*.ear
+
+# IntelliJ IDEA project files
+/.idea/
+*.iml
+*.ipr
+*.iws
+
+# Eclipse and Spring Tool Suite project files
+.classpath
+.project
+.settings/
+.factorypath
+.springBeans
+.sts4-cache/
+
+# Logs and JVM crash reports
+*.log
+hs_err_pid*
+replay_pid*
+
+# Local environment files (keep a committed template)
+.env
+.env.*
+!.env.example
+
+# Operating-system metadata
+.DS_Store

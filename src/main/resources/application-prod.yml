@@ -1,0 +1,25 @@
+server:
+  port: 8080
+  tomcat:
+    max-swallow-size: 1GB
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 1GB
+      max-request-size: 1GB
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+toolbox:
+  jwt:
+    secret: ${TOOLBOX_JWT_SECRET}
+
+  storage:
+    root: /data/files
+
+  upload:
+    chunk-dir: /data/chunks

@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: toolbox
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+toolbox:
+  jwt:
+    expiration-minutes: 720
+
+  ws:
+    path: /ws
+    heartbeat-interval: 30s
+    heartbeat-timeout: 60s
+
+  upload:
+    max-file-size: 10737418240
+    chunk-size: 5242880
+    chunk-retention-hours: 24
+    cleanup-interval-ms: 3600000
+
+  security:
+    public-paths:
+      - /api/auth/login
+      - /api/system/init-status
+      - /api/system/init
+    token-auth-paths:
+      - /api/tools/*/download

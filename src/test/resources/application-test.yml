@@ -1,0 +1,36 @@
+# ============================================================
+# 测试专用配置（testing-rules §19.2：集成测试优先 H2 内存库，不直连真实库）
+# 仅测试生效：@ActiveProfiles("test") 时加载，生产配置不受影响。
+# ============================================================
+spring:
+  datasource:
+    # H2 内存库 + MySQL 兼容模式，保证与生产 MySQL 语义尽量一致
+    url: jdbc:h2:mem:toolbox-test;MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ''
+  # 测试每次启动重建结构，避免用例间残留
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema-h2.sql
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+toolbox:
+  jwt:
+    secret: test-secret-0123456789abcdefghijklmnopqrstuvwxyz
+    expiration-minutes: 60
+  storage:
+    root: ${java.io.tmpdir}/toolbox-test-files
+  upload:
+    # ★ 分片临时目录必须隔离到测试专用路径：
+    #   否则测试会往**应用真实的分片目录**（默认 ${java.io.tmpdir}/toolbox-chunks）里写分片，
+    #   跑完留下一堆 tbf-* 目录，混进人工验收 / 真实上传的中间文件里，极难分辨。
+    #   （2026-09-20 QA 发现的真实污染：应用分片目录里出现了测试标识与缺陷注入残渣。）
+    chunk-dir: ${java.io.tmpdir}/toolbox-test-chunks
