@@ -1,0 +1,88 @@
+/* 全局基础样式；Element Plus 深色变量由 element-plus/theme-chalk/dark/css-vars.css 提供（见 main.ts） */
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--tb-bg);
+  color: var(--tb-text);
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: var(--tb-font);
+}
+
+a {
+  color: var(--tb-accent);
+  text-decoration: none;
+}
+
+/* 通用容器 */
+.tb-card {
+  background: var(--tb-panel);
+  border: 1px solid var(--tb-border);
+  border-radius: var(--tb-radius-lg);
+  padding: var(--tb-gap-lg);
+}
+
+.tb-panel {
+  background: var(--tb-panel-2);
+  border: 1px solid var(--tb-border);
+  border-radius: var(--tb-radius);
+  padding: var(--tb-gap);
+}
+
+.tb-title {
+  font-size: var(--tb-font-lg);
+  font-weight: 500;
+  margin: 0 0 var(--tb-gap) 0;
+}
+
+.tb-muted {
+  color: var(--tb-text-2);
+  font-size: var(--tb-font-xs);
+}
+
+/* 提示条（与原型一致：左侧色条 + 淡底） */
+.tb-note {
+  border-left: 3px solid var(--tb-warning);
+  background: rgba(255, 179, 71, 0.08);
+  border-radius: 0 var(--tb-radius-sm) var(--tb-radius-sm) 0;
+  padding: var(--tb-gap-sm) var(--tb-gap);
+  font-size: var(--tb-font-xs);
+  color: var(--tb-text-2);
+  line-height: 1.7;
+}
+
+.tb-note.is-info {
+  border-left-color: var(--tb-accent);
+  background: rgba(79, 140, 255, 0.08);
+}
+
+.tb-note.is-danger {
+  border-left-color: var(--tb-danger);
+  background: rgba(255, 107, 107, 0.08);
+}
+
+/* 表格深色微调 */
+.el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: var(--tb-panel-2);
+  --el-table-border-color: var(--tb-border);
+}
+
+/* Bug 2 修复（v2）：Element Plus 2.x 固定列由 position:sticky 实现（DOM 上没有旧版
+   element-ui 的 .el-table__fixed-right 包装节点，v1 选择器不命中）。固定单元格需不透明背景，
+   否则横向滚动时下层单元格透出、操作列按钮叠在一起。仅作用于表体固定单元格
+   （表头由 --el-table-header-bg-color 控制本就不透明），保留普通单元格 transparent。 */
+.el-table .el-table__body .el-table-fixed-column--left,
+.el-table .el-table__body .el-table-fixed-column--right {
+  background-color: var(--tb-panel);
+}
+
+.el-table th.el-table__cell {
+  color: var(--tb-accent);
+}

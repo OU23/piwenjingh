@@ -1,0 +1,62 @@
+/* 设计令牌（与 docs/前端蓝图.html 的深色卡片风格保持一致） */
+:root {
+  /* 底色与面板 */
+  --tb-bg: #0a0e17;
+  --tb-panel: #131826;
+  --tb-panel-2: #1a2133;
+  --tb-panel-3: #0d1220;
+  --tb-border: #2a3350;
+
+  /* 文字 */
+  --tb-text: #e4e8f0;
+  --tb-text-2: #8b95b0;
+  --tb-text-3: #5b6480;
+
+  /* 语义色 */
+  --tb-accent: #4f8cff;
+  --tb-success: #00d4aa;
+  --tb-warning: #ffb347;
+  --tb-danger: #ff6b6b;
+
+  /* 圆角 */
+  --tb-radius-sm: 6px;
+  --tb-radius: 8px;
+  --tb-radius-lg: 12px;
+
+  /* 间距 */
+  --tb-gap-xs: 4px;
+  --tb-gap-sm: 8px;
+  --tb-gap: 12px;
+  --tb-gap-lg: 16px;
+  --tb-gap-xl: 24px;
+
+  /* 字号 */
+  --tb-font-xs: 12px;
+  --tb-font-sm: 13px;
+  --tb-font: 14px;
+  --tb-font-lg: 15px;
+  --tb-font-xl: 19px;
+
+  /* 布局尺寸 */
+  --tb-sidebar-width: 200px;
+  --tb-header-height: 56px;
+
+  /* 层级 */
+  --tb-z-header: 100;
+}
+
+/* 主按钮主题色对齐前端蓝图：蓝图主操作（上传工具 / 下载 / 新增 / 保存）为绿色 .b.g，
+   通用确认（提交 / 登录）为蓝 .b。这里把 Element 主色翻成绿色，蓝色链接/激活态保留（--tb-accent）。
+   选择器必须用 html.dark：Element 暗色变量挂 html.dark（特异性 0,1,1），用 .dark 会被其压制不生效。 */
+html.dark {
+  --el-color-primary: #00d4aa;
+  --el-color-primary-light-3: #1fdcb4;
+  --el-color-primary-light-5: #4fe3c4;
+  --el-color-primary-light-7: #85ecd6;
+  --el-color-primary-light-8: #a0f0df;
+  --el-color-primary-light-9: #c0f5e8;
+  --el-color-primary-dark-2: #00a888;
+  /* 按钮圆角对齐蓝图（蓝图 .b 为 6px） */
+  --el-border-radius-base: 6px;
+  --el-border-radius-small: 4px;
+}
