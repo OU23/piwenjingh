@@ -7,7 +7,7 @@
 1. 将完整项目源码上传至服务器，并保留 `deploy/` 与 `src/` 的相对目录关系。
 2. 安装 Docker Engine 和 Docker Compose v2。
 3. 创建线上 MySQL 数据库与业务账号，并允许该服务器访问。
-4. 编辑 `deploy/docker-compose.yml`，替换全部 `REPLACE_*` 内容：数据库主机、库名、账号、密码及不少于 32 个字符的 JWT 密钥。
+4. 编辑 `deploy/docker-compose.yml`，替换全部 `REPLACE_*` 配置值：数据库库名、账号、密码及不少于 32 个字符的 JWT 密钥。宿主机 MySQL 保持使用 `host.docker.internal`。
 5. 确保部署用户可创建和写入 `/opt/toolbox/uploads`。该目录保存正式文件和上传分片，必须纳入备份。
 
 数据库密码和 JWT 密钥会按当前部署要求直接保存在 Compose 文件中。请将该文件视作敏感配置，避免提交到公开仓库、日志、截图或工单。
@@ -18,11 +18,11 @@
 
 ```bash
 # 新库：创建全部当前表结构
-mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < src/main/resources/db/schema.sql
+mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/schema.sql
 
 # 老库升级：按需执行
-mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < src/main/resources/db/04-add-tool-grant.sql
-mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < src/main/resources/db/03-align-schema.sql
+mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/04-add-tool-grant.sql
+mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/03-align-schema.sql
 ```
 
 新库创建首个管理员时，启动服务后调用既有 `POST /api/system/init` 接口；数据库 SQL 不会创建管理员明文密码。

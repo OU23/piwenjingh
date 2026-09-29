@@ -1,0 +1,19 @@
+# Version-control and IDE metadata
+.git/
+.idea/
+*.iml
+
+# Local build output and logs
+target/
+build/
+out/
+*.log
+
+# Local secrets and deployment-only configuration
+.env
+.env.*
+!.env.example
+deploy/docker-compose.yml
+
+# Documents are not required to build the application image
+docs/
