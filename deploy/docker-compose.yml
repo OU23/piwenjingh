@@ -16,7 +16,7 @@ services:
       SPRING_DATASOURCE_URL: "jdbc:mysql://host.docker.internal:3306/toolbox?useUnicode=true&characterEncoding=UTF-8&connectionTimeZone=Asia/Shanghai"
       SPRING_DATASOURCE_USERNAME: "zj_toolbox"
       SPRING_DATASOURCE_PASSWORD: "aLt%8@E!9J"
-      TOOLBOX_JWT_SECRET: "REPLACE_WITH_A_RANDOM_SECRET_AT_LEAST_32_CHARACTERS"
+      TOOLBOX_JWT_SECRET: "3f101b3c4f58e3f77e385904e7e7cfb3116976be955079a03c2087f7aaef6924"
     volumes:
       - /opt/toolbox/uploads/files:/data/files
       - /opt/toolbox/uploads/chunks:/data/chunks
