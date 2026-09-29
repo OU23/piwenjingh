@@ -4,7 +4,6 @@
 *.iml
 
 # Local build output and logs
-target/
 build/
 out/
 *.log

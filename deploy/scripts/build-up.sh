@@ -3,10 +3,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 DEPLOY_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+PROJECT_DIR="$(CDPATH= cd -- "$DEPLOY_DIR/.." && pwd)"
 COMPOSE_FILE="$DEPLOY_DIR/docker-compose.yml"
 
-if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
-  echo "Docker, Docker Compose v2, and curl are required." >&2
+if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v mvn >/dev/null 2>&1; then
+  echo "Docker, Docker Compose v2, curl, and Maven are required." >&2
   exit 1
 fi
 
@@ -22,6 +23,7 @@ if [[ ! -w /opt/toolbox/uploads/files || ! -w /opt/toolbox/uploads/chunks ]]; th
 fi
 
 docker compose -f "$COMPOSE_FILE" config -q
+mvn -B -f "$PROJECT_DIR/pom.xml" -DskipTests clean package
 docker compose -f "$COMPOSE_FILE" up --build --detach
 
 echo "Waiting for the backend health check..."

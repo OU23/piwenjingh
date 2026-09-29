@@ -5,7 +5,7 @@
 ## 1. 部署前准备
 
 1. 将完整项目源码上传至服务器，并保留 `deploy/` 与 `src/` 的相对目录关系。
-2. 安装 Docker Engine 和 Docker Compose v2。
+2. 安装 JDK 17、Maven 3.9+、Docker Engine 和 Docker Compose v2；`build-up.sh` 会在宿主机使用 Maven 打包，因此可复用宿主机的 Maven 镜像与依赖缓存。
 3. 创建线上 MySQL 数据库与业务账号，并允许该服务器访问。
 4. 编辑 `deploy/docker-compose.yml`，替换全部 `REPLACE_*` 配置值：数据库库名、账号、密码及不少于 32 个字符的 JWT 密钥。宿主机 MySQL 保持使用 `host.docker.internal`。
 5. 确保部署用户可创建和写入 `/opt/toolbox/uploads`。该目录保存正式文件和上传分片，必须纳入备份。
@@ -36,7 +36,7 @@ mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/03-align-schema.sql
 ./deploy/scripts/healthcheck.sh
 ```
 
-源码更新后执行：
+源码更新后执行（脚本会先在宿主机执行 `mvn clean package -DskipTests`，再构建仅包含 JRE 和 JAR 的运行镜像）：
 
 ```bash
 ./deploy/scripts/restart.sh
