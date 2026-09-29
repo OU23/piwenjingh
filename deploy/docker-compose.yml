@@ -7,13 +7,15 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       SPRING_PROFILES_ACTIVE: prod
       TZ: Asia/Shanghai
       # Replace every REPLACE_* value before the first production deployment.
-      SPRING_DATASOURCE_URL: "jdbc:mysql://REPLACE_DB_HOST:3306/REPLACE_DB_NAME?useUnicode=true&characterEncoding=UTF-8&connectionTimeZone=Asia/Shanghai"
-      SPRING_DATASOURCE_USERNAME: "REPLACE_DB_USERNAME"
-      SPRING_DATASOURCE_PASSWORD: "REPLACE_DB_PASSWORD"
+      SPRING_DATASOURCE_URL: "jdbc:mysql://host.docker.internal:3306/toolbox?useUnicode=true&characterEncoding=UTF-8&connectionTimeZone=Asia/Shanghai"
+      SPRING_DATASOURCE_USERNAME: "zj_toolbox"
+      SPRING_DATASOURCE_PASSWORD: "aLt%8@E!9J"
       TOOLBOX_JWT_SECRET: "REPLACE_WITH_A_RANDOM_SECRET_AT_LEAST_32_CHARACTERS"
     volumes:
       - /opt/toolbox/uploads/files:/data/files
