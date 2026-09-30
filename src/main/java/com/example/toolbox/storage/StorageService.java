@@ -6,7 +6,11 @@ import java.io.InputStream;
 /**
  * 文件存储适配层接口（principles.md R1）。
  * 业务层只持有存储键，物理路径禁止出现在数据库、接口、日志与前端。
- * 具体实现可为本地磁盘或对象存储，业务代码不感知。
+ * 具体实现可为本地磁盘（{@link LocalStorageService}）或对象存储（{@link OssStorageService}），业务代码不感知（E-01）。
+ *
+ * <p><b>落点路由（M-22）</b>：业务方注入的是 {@link RoutedStorageService}（{@code @Primary}），
+ * 它按"存储键的落点"把请求转给对应实现 —— 业务代码无需感知文件在后端哪里，
+ * 且**读写 / 删除只作用于文件实际所在的那一个后端**（不做跨后端连带操作）。
  */
 public interface StorageService {
 
@@ -21,7 +25,7 @@ public interface StorageService {
      *
      * @param storageKey 存储键（由调用方提供的非敏感标识，如前端生成的 fileKey）
      * @param data       文件输入流（调用方负责关闭）
-     * @param size       大小（字节），用于校验/统计（-1 表示由流长度决定）
+     * @param size       大小（字节），用于校验/统计（本地实现 -1 表示由流长度决定；**对象存储实现要求已知长度**）
      * @return 实际使用的存储键
      */
     String save(String storageKey, InputStream data, long size) throws IOException;
@@ -41,4 +45,20 @@ public interface StorageService {
      * 生成一个系统存储键（当调用方不提供时使用）。
      */
     String generateKey();
+
+    /**
+     * 生成"可直接访问的短时效地址"（M-22 / 契约 v1.19「受控例外」）。
+     *
+     * <p><b>受控例外</b>：不得提供永久 / 无鉴权直链；本方法产物为**带过期时间、绑定对象的签名 URL**。
+     *
+     * @param storageKey       存储键
+     * @param downloadFileName 期望的下载文件名（可为 null；OSS 以 {@code response-content-disposition} 覆盖）
+     * @param ttl              有效期
+     * @return 可访问地址；**本实现无直链能力时返回 {@code Optional.empty()}**（本地磁盘实现），
+     *         由上层回退为"后端代理下载地址"
+     */
+    java.util.Optional<String> presignedUrl(String storageKey, String downloadFileName, java.time.Duration ttl);
+
+    /** 本实现对应的落点（用于路由与断言）。 */
+    StorageBackend backend();
 }

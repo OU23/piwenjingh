@@ -155,6 +155,32 @@ public class ChunkStorage {
         return written;
     }
 
+    /**
+     * 分片**合计字节数**（M-22）：合并前把"已知长度"提供给存储层。
+     *
+     * <p>对象存储实现（{@code OssStorageService.save}）要求已知长度才能流式上传，
+     * 而合并是"边读边写"的管道，调用时拿不到总长 —— 故先按分片文件大小求和。
+     * 只 stat 各分片文件（**不读内容**），代价极小；缺片口径与 {@link #mergeTo} 一致（2002）。
+     */
+    public long totalSize(String identifier, int totalChunks) {
+        Path dir = dirFor(identifier);
+        long total = 0;
+        for (int i = 1; i <= totalChunks; i++) {
+            Path chunk = dir.resolve(chunkFileName(i));
+            if (!Files.isRegularFile(chunk)) {
+                throw new BusinessException(Code.CHUNK_INVALID,
+                        "分片不完整：缺少第 " + i + " 个分片");
+            }
+            try {
+                total += Files.size(chunk);
+            } catch (IOException e) {
+                throw new BusinessException(Code.CHUNK_INVALID,
+                        "读取分片大小失败：" + e.getMessage());
+            }
+        }
+        return total;
+    }
+
     /** 清理该 identifier 下的全部分片；目录不存在或已清理不报错（幂等） */
     public void clean(String identifier) {
         Path dir = dirFor(identifier);

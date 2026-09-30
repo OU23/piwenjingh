@@ -1,6 +1,18 @@
+server:
+  tomcat:
+    # 服务端提前拒绝（令牌失效 / 分片超限）时能"吞掉"多少请求体。
+    # Tomcat 默认仅 2MB：分片被拒时吞不下剩余 body → **直接断连**，客户端只看到"网络错误"。
+    # ⚠️ 本项**各环境通用**（不随 profile 变化），故置于基础文件；dev/prod 的同名项为冗余覆盖。
+    max-swallow-size: 1GB
+
 spring:
   application:
     name: toolbox
+  # 上传上限：**各环境通用**（前端分片 5MB，Spring Boot 默认 1MB 会被拒），故置于基础文件。
+  servlet:
+    multipart:
+      max-file-size: 1GB
+      max-request-size: 1GB
 
 mybatis-plus:
   configuration:
@@ -24,10 +36,29 @@ toolbox:
     chunk-retention-hours: 24
     cleanup-interval-ms: 3600000
 
+  # ---- 存储（M-22 阿里云 OSS 对接）----
+  storage:
+    # 全局开关：新上传文件写到哪里 —— local（默认，本机磁盘）/ oss（阿里云 OSS）。
+    # ⚠️ 它只决定"写目标"；读取 / 删除按**每个文件的实际落点**(tb_tool_version.storage_backend)路由。
+    type: ${TOOLBOX_STORAGE_TYPE:local}
+
+  oss:
+    # 仅在 storage.type=oss（或存在 oss 落点文件）时需要。凭据一律走环境变量，禁止明文入库/入仓库。
+    # ⚠️ endpoint 必须是**公网**地址（如 oss-cn-hangzhou.aliyuncs.com），不得用 -internal —— 直链要求浏览器可直连。
+    endpoint: ${OSS_ENDPOINT:}
+    bucket: ${OSS_BUCKET:}
+    access-key-id: ${OSS_ACCESS_KEY_ID:}
+    access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
+    # 签名 URL 有效期（秒）：须覆盖"大文件下载 + 暂停后续传"，否则暂停久了会续不上
+    url-ttl-seconds: ${OSS_URL_TTL_SECONDS:3600}
+
   security:
     public-paths:
       - /api/auth/login
       - /api/system/init-status
       - /api/system/init
+      # WebSocket 握手路径（M-18）：必须在此放行，否则 JwtAuthFilter 会拦截 /ws 升级请求 → 前端 WS 连不上 → 被踢不弹窗。
+      # 此处显式列出会覆盖 PublicPathProperties 的默认值（默认值本就含 /ws），故 /ws 必须手动补回。
+      - /ws
     token-auth-paths:
       - /api/tools/*/download

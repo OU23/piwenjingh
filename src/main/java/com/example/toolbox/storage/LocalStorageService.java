@@ -100,6 +100,21 @@ public class LocalStorageService implements StorageService {
     }
 
     /**
+     * 本地磁盘**不提供直链**（M-22 / E-01）：返回空，由上层回退为"后端代理下载地址"。
+     * 这样"切换存储后端不改业务代码"——业务侧只问"能不能给个直链"，本地回答"不能"。
+     */
+    @Override
+    public java.util.Optional<String> presignedUrl(String storageKey, String downloadFileName,
+                                                   java.time.Duration ttl) {
+        return java.util.Optional.empty();
+    }
+
+    @Override
+    public StorageBackend backend() {
+        return StorageBackend.LOCAL;
+    }
+
+    /**
      * 生效根路径（全局设置优先、配置兜底，见 {@link StorageRootProvider}）。
      *
      * <p>未配置 → **2003**（存储路径不可用）而非 500：这是可预期的运维配置问题，

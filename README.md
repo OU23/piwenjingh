@@ -27,19 +27,19 @@
 
 ## 3. 初始化数据库
 
-> 脚本位于 `src/main/resources/db/`（**只由人工执行**，后端代码零引用、不会自动执行）。
-> 完整执行清单 / 两种部署场景 / 校验 SQL 见 **`src/main/resources/db/README.md`**。
+> 脚本位于 `docs/db/`（**只由人工执行**，后端代码零引用、不会自动执行）。
+> 完整执行清单 / 两种部署场景 / 校验 SQL 见 **`docs/db/README.md`**。
 
 ```bash
 # ① 建表（全量 9 张表，幂等，可重复执行）—— 新库只需这一步
-mysql -u root -p toolbox < src/main/resources/db/schema.sql
+mysql -u root -p toolbox < docs/db/schema.sql
 
 # ② 种子数据：基础标签字典 + 默认单文件上限（幂等）
 #    可选：`POST /api/system/init` 也会写同名默认值，走初始化页时可不执行
-mysql -u root -p toolbox < src/main/resources/db/02-seed-base.sql
+mysql -u root -p toolbox < docs/db/02-seed-base.sql
 
 # ③ 表结构对齐（幂等；**库由旧版脚本建时必须跑一次**）
-mysql -u root -p toolbox < src/main/resources/db/03-align-schema.sql
+mysql -u root -p toolbox < docs/db/03-align-schema.sql
 ```
 
 > **③ 为什么需要**：`CREATE TABLE IF NOT EXISTS` **不会修改已存在的表**。若库是更早版本的
@@ -55,10 +55,10 @@ mysql -u root -p toolbox < src/main/resources/db/03-align-schema.sql
 ## 4. 启动
 
 ```bash
-# 方式一：命令行
+# 方式一：命令行（必须指定 dev profile，否则只加载基础配置、无数据源 → 启动失败）
 export MYSQL_PASSWORD=你的数据库口令
 export JWT_SECRET=请换成长随机串
-mvn spring-boot:run
+mvn spring-boot:run -Dspring-boot.run.profiles=dev
 
 # 方式二：打包后运行
 mvn clean package -DskipTests
@@ -99,6 +99,15 @@ curl -X POST http://localhost:8080/api/auth/login \
 | `toolbox.upload.chunk-size`            | 5242880（5 MB）      | 分片大小参考值；**实际以客户端切分大小为准，后端不校验单片大小** |
 | `toolbox.upload.chunk-retention-hours` | 24                 | 未合并分片的保留时长（小时），到期由定时任务清理           |
 | `toolbox.upload.cleanup-interval-ms`   | 3600000            | 分片清理任务的扫描间隔（毫秒）                    |
+| `toolbox.security.public-paths`       | 见 `PublicPathProperties` 默认值 | 认证过滤器（`JwtAuthFilter`）白名单：列表内的路径**完全公开、无需任何凭证**。默认值已含 `/ws`、登录、初始化等 |
+
+**`toolbox.security.public-paths` 的硬性约束（易踩坑）**：  
+该列表**必须包含 `/ws`**，否则会出现「账号被踢不弹窗 / 前端 WebSocket 连不上」。原因链：
+1. WebSocket 握手是一个打到 `/ws` 的 HTTP 升级请求，它会先经过 `JwtAuthFilter`；
+2. 握手无法携带 `Authorization` 头（令牌走 `?token=` 查询参数），其鉴权由 `AuthHandshakeInterceptor` 单独完成；
+3. 若 `/ws` 不在 `public-paths`，过滤器会把这次升级请求当成「未登录」直接回 `401` → 握手失败 → 前端 WS 永远连不上 → 后端想推 `FORCE_LOGOUT` 时找不到会话 → 不弹窗。
+
+> ⚠️ **显式枚举会顶掉默认值**：`PublicPathProperties` 的 Java 默认值本就含 `/ws`，但**仅当配置文件里完全没写 `toolbox.security.public-paths` 时才生效**。Spring Boot 对 list 型属性是「显式覆盖默认值、跨 profile 文件不合并」——只要任一文件手写这个列表，**就必须手动把 `/ws` 写进去**，否则会悄悄丢失（本仓库拆分后的 `application.yml` / `application-dev.yml` 曾因此漏掉 `/ws`，已补回）。
 
 **存储根路径的取值优先级**（重要）：  
 ① 全局设置表 `storageRoot`（管理员在设置页填写，即时生效）→ ② 配置项 `toolbox.storage.root`。  
@@ -115,9 +124,10 @@ curl -X POST http://localhost:8080/api/auth/login \
 | 上传报 `2001 文件超过大小上限`               | 超出全局设置的 `maxFileSize`；管理员可在设置页调整（改后立刻对新上传生效）                 |
 | 上传报 `2002 分片不完整`                  | 有分片没传成功；提示里会列出**缺失的分片序号**，前端据此续传补片                           |
 | 上传大文件报"无法连接服务器"或 `1003 请求体超过服务端接收上限` | 客户端分片大小超过了 `spring.servlet.multipart.max-file-size`（本配置 **1GB**，正常不会触发）。若被调小过，请调到不小于分片大小（前端当前 5MB） |
-| 某个列表接口突然 `500` | 先查该表时间列是否有**零日期**（`create_time LIKE '0000%'`）—— 库由旧版建表脚本创建时会踩到；跑 `src/main/resources/db/03-align-schema.sql` 修复 |
+| 某个列表接口突然 `500` | 先查该表时间列是否有**零日期**（`create_time LIKE '0000%'`）—— 库由旧版建表脚本创建时会踩到；跑 `docs/db/03-align-schema.sql` 修复 |
 | 下载返回 `401`                        | 未登录或令牌过期；`?token=` 方式下载时令牌**一次性且 60 秒有效**，重复点击会失效            |
 | 跨部门看不到工具                          | 属预期：普通用户默认只见"本部门 + 公共"；全局管理员（持 `sys:setting`）不受此限            |
+| 账号被踢后不弹"下线通知" / 前端 WebSocket 连不上 | 多半是 `toolbox.security.public-paths` **漏了 `/ws`**：`JwtAuthFilter` 把 `/ws` 升级请求当未登录拦成 `401`，WS 握手失败、前端连不上，后端无法推送 `FORCE_LOGOUT`。修法：在 `public-paths` 补 `- /ws` 后重启（详见 §6 说明） |
 
 ## 8. 跑测试
 

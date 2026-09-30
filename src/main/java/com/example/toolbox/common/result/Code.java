@@ -4,7 +4,7 @@ import java.util.Arrays;
 
 /**
  * 错误码枚举（契约 §十二）。
- * 实际 14 个：1000~1008 + 2001~2005（v1.8 新增 1008 后由 13 → 14；沿用 P5 已勘误结论）。
+ * 实际 15 个：1000~1008 + 2001~2006（v1.8 新增 1008 → 14 个；v1.19 / M-22 新增 2006 → 15 个）。
  * 每个错误码绑定最终 HTTP 状态：1001→401、1002→403、1000→500，其余→200。
  */
 public enum Code {
@@ -24,7 +24,9 @@ public enum Code {
     CHUNK_INVALID(2002, "分片不完整或分片异常", 200),
     STORAGE_UNAVAILABLE(2003, "存储路径不可用", 200),
     TOOL_DELETED(2004, "工具不存在或已删除", 200),
-    FILE_KEY_INVALID(2005, "文件标识无效", 200);
+    FILE_KEY_INVALID(2005, "文件标识无效", 200),
+    /** M-22：文件落 OSS 但对象存储调用失败（取签名 URL / 读写对象）。HTTP 200，且**不得影响其他接口**（E-02 隔离）。 */
+    STORAGE_OSS_UNAVAILABLE(2006, "对象存储暂不可用", 200);
 
     private final int code;
     private final String message;

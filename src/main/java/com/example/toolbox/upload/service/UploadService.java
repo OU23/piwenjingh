@@ -128,6 +128,9 @@ public class UploadService {
      * 内存占用与文件总大小无关（仅 8 KB 缓冲 + 管道缓冲）。
      */
     private long streamMergeIntoStorage(String fileKey, String identifier, int totalChunks) {
+        // M-22：先算"分片合计长度"作为**已知长度**传给存储层 —— 对象存储实现要求已知长度才能流式上传，
+        // 而合并是管道边读边写、调用时拿不到总长。（本地实现忽略此参数，行为不变。）
+        long totalSize = chunkStorage.totalSize(identifier, totalChunks);
         try (PipedInputStream pipeIn = new PipedInputStream(64 * 1024);
              PipedOutputStream pipeOut = new PipedOutputStream(pipeIn)) {
 
@@ -151,8 +154,8 @@ public class UploadService {
             producer.start();
 
             try {
-                // 存储层流式写入（size 传 -1 表示由流长度决定）
-                storageService.save(fileKey, pipeIn, -1);
+                // 存储层流式写入（M-22：传"分片合计长度"，供对象存储实现设置 Content-Length）
+                storageService.save(fileKey, pipeIn, totalSize);
             } finally {
                 try {
                     producer.join();

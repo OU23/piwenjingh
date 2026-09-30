@@ -100,6 +100,7 @@ CREATE TABLE tb_tool_version (
   file_name      varchar(255) NOT NULL,
   file_ext       varchar(20)  NOT NULL,
   file_size      bigint       NOT NULL,
+  storage_backend varchar(8)  NOT NULL DEFAULT 'local',
   uploader_id    bigint       NOT NULL,
   download_count int          NOT NULL DEFAULT 0,
   create_time    datetime     NOT NULL,

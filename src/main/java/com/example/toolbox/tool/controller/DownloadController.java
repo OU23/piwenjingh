@@ -10,7 +10,9 @@ import com.example.toolbox.security.PermissionChecker;
 import com.example.toolbox.security.UserContext;
 import com.example.toolbox.tool.service.DownloadService;
 import com.example.toolbox.tool.service.DownloadTokenStore;
+import com.example.toolbox.tool.service.DownloadUrlService;
 import com.example.toolbox.tool.service.ToolService;
+import com.example.toolbox.tool.vo.DownloadUrlVO;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -54,6 +56,7 @@ import java.nio.charset.StandardCharsets;
 public class DownloadController {
 
     private final DownloadService downloadService;
+    private final DownloadUrlService downloadUrlService;
     private final DownloadTokenStore tokenStore;
     private final ToolService toolService;
     private final PermissionChecker permissionChecker;
@@ -133,6 +136,35 @@ public class DownloadController {
             // B5 T2：HEAD 不写 body（RFC 9110）；「资源已不存在」仅置 404 状态码
             if (e.getCode() == Code.TOOL_DELETED || e.getCode() == Code.FILE_KEY_INVALID) {
                 response.setStatus(HttpStatus.NOT_FOUND.value());
+                return;
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * 签发**可直接访问的下载地址**（契约 §9.5 附 / v1.19，M-22）。
+     *
+     * <p>只走 Bearer 通道（前端 axios 调用）：文件落 OSS → **短时效签名 URL**（直连）；
+     * 落本地 → 后端 {@code ?token=} 地址（代理）。**先鉴权、后签发**，失败不签发。
+     */
+    @RequestMapping(value = "/{id:\\d+}/download-url", method = RequestMethod.GET)
+    public void downloadUrl(@org.springframework.web.bind.annotation.PathVariable Long id,
+                            @RequestParam(required = false) String versionId,
+                            HttpServletResponse response) throws java.io.IOException {
+        try {
+            LoginUser user = UserContext.get();
+            if (user == null) {
+                throw new BusinessException(Code.UNAUTHENTICATED);
+            }
+            // 本控制器不走注解拦截器，权限点在控制器内显式校验（与 download 同口径）
+            permissionChecker.require(user, PermissionCode.TOOL_DOWNLOAD);
+            DownloadUrlVO vo = downloadUrlService.planUrl(id, versionId, user);
+            writeJson(response, HttpStatus.OK.value(), R.ok(vo));
+        } catch (BusinessException e) {
+            // 与 §9.5 一致：「资源已不存在」（2004 / 2005）→ 404 + 统一响应体
+            if (e.getCode() == Code.TOOL_DELETED || e.getCode() == Code.FILE_KEY_INVALID) {
+                writeResourceGone(response, e.getCode(), e.getMessage());
                 return;
             }
             throw e;
@@ -219,9 +251,14 @@ public class DownloadController {
      * 复用 {@link R#fail} 保证与全局异常处理器同构，避免硬编码 JSON 结构。
      */
     private void writeResourceGone(HttpServletResponse response, Code code, String message) throws java.io.IOException {
-        response.setStatus(HttpStatus.NOT_FOUND.value());
+        writeJson(response, HttpStatus.NOT_FOUND.value(), R.fail(code, message));
+    }
+
+    /** 写统一响应体 JSON（显式控制状态码，供 download-url 使用） */
+    private void writeJson(HttpServletResponse response, int status, R<?> body) throws java.io.IOException {
+        response.setStatus(status);
         response.setContentType("application/json;charset=UTF-8");
         response.setCharacterEncoding("UTF-8");
-        response.getWriter().write(objectMapper.writeValueAsString(R.fail(code, message)));
+        response.getWriter().write(objectMapper.writeValueAsString(body));
     }
 }

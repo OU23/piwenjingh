@@ -22,7 +22,7 @@ import java.util.Optional;
  * <p>关键约束：
  * <ul>
  *   <li>**R4 流式**：下载**不把文件读入内存**，分片读取用 {@code skip} + 限量拷贝；</li>
- *   <li>**R5 禁直链**：文件只能经本接口按鉴权结果返回，物理路径从不外泄；</li>
+ *   <li>**R5 禁直链**：本接口只按鉴权结果返回内容，物理路径从不外泄（**受控例外**：OSS 落点的短时效签名 URL 见 {@link DownloadUrlService}）；</li>
  *   <li>**R3 可见范围**：判定走 {@code ToolService.requireVisibleTool}，不在此重写；</li>
  *   <li>**计数口径 N-02**：仅「无 Range，或 Range 起点为 0」计数；续传不计数；HEAD 不计数；失败不计数。</li>
  * </ul>
@@ -39,6 +39,7 @@ public class DownloadService {
     private final ToolVersionMapper toolVersionMapper;
     private final StorageService storageService;
     private final ToolService toolService;
+    private final DownloadTokenService downloadTokenService;
 
     /**
      * 下载准备结果：解析出的版本 + Range 语义。
@@ -158,8 +159,13 @@ public class DownloadService {
      * **仅在** {@code plan.countable()} 为 true 时由调用方触发；用原子自增避免并发丢计数。
      */
     public void increaseCount(DownloadPlan plan) {
-        toolMapper.incrementDownloadCount(plan.tool().getId());
-        toolVersionMapper.incrementDownloadCount(plan.version().getId());
+        increaseCount(plan.tool(), plan.version());
+    }
+
+    /** M-22：签发下载地址（{@link DownloadUrlService#planUrl}）成功即计 1 次（契约 v1.19 计数口径） */
+    public void increaseCount(ToolDO tool, ToolVersionDO version) {
+        toolMapper.incrementDownloadCount(tool.getId());
+        toolVersionMapper.incrementDownloadCount(version.getId());
     }
 
     // ---------------- 内部 ----------------
@@ -184,12 +190,13 @@ public class DownloadService {
     }
 
     /**
-     * 解析目标版本（**下载链路专用**，仅在 {@link #plan} / {@link #planWithRange} 内调用）。
+     * 解析目标版本（**下载链路 + 地址签发共用**，见 {@link DownloadUrlService}）。
      * 不传 versionId 取最新版；指定的版本必须属于该工具。
      *
      * <p>B5 T2：下载链路内「资源已不存在」统一收敛为 {@code 2004}（与契约 v1.11 / 对方实现一致）。
+     * <p>包级可见：`DownloadUrlService` 复用同一份解析，**不复制这段逻辑**。
      */
-    private ToolVersionDO resolveVersion(ToolDO tool, String versionId) {
+    ToolVersionDO resolveVersion(ToolDO tool, String versionId) {
         if (versionId == null || versionId.isBlank()) {
             if (tool.getLatestVersionId() == null || tool.getLatestVersionId() <= 0) {
                 throw new BusinessException(Code.TOOL_DELETED, "工具暂无可用版本");

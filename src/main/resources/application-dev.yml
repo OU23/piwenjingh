@@ -76,11 +76,14 @@ toolbox:
     cleanup-interval-ms: 3600000
 
   security:
-    # 无需登录即可访问的路径（登录 / 初始化状态 / 初始化）
+    # 无需登录即可访问的路径（登录 / 初始化状态 / 初始化 / WebSocket 握手）
     public-paths:
       - /api/auth/login
       - /api/system/init-status
       - /api/system/init
+      # ⚠️ 必须含 /ws：握手无法携带 Authorization 头，若不放行，JwtAuthFilter 会拦截 WS 升级请求，
+      # 前端 WS 连不上 → 账号被踢时收不到 FORCE_LOGOUT 推送（无弹窗）。与 PublicPathProperties 默认值保持一致。
+      - /ws
     # 允许用 ?token= 作为鉴权载体的路径（非安全上下文下的原生 <a> 下载）
     # 仅当请求**确实携带非空 token 参数**时才放行认证过滤器，令牌有效性仍由控制器校验
     token-auth-paths:

@@ -36,6 +36,12 @@ public class ToolVersionDO {
     /** 文件大小（字节） */
     private Long fileSize;
 
+    /**
+     * 文件落点：{@code local} / {@code oss}（数据模型 v1.2 §3.6 / §5.5，M-22）。
+     * 默认 {@code local}；下载按此字段分流（OSS → 签名直链；本地 → 后端代理）。
+     */
+    private String storageBackend;
+
     /** 上传人 */
     private Long uploaderId;
 

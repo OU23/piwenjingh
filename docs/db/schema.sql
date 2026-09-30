@@ -8,7 +8,7 @@
 --
 -- 【本脚本的地位】全量、幂等 —— 含当前**全部 9 张表**与列默认值，与代码实体一一对应。
 --   - 全新库：只跑本脚本即可（种子数据与管理员由 `POST /api/system/init` 写入）。
---   - 老库升级：本脚本是 `IF NOT EXISTS`，**不会补建新表 / 新列** → 请跑 `03` / `04` 增量脚本。
+--   - 老库升级：本脚本是 `IF NOT EXISTS`，**不会补建新表 / 新列** → 请跑 `03` / `04` / `05` 增量脚本。
 --   ⚠️ 详细执行清单与场景见同目录 `README.md`。
 --
 -- ⚠️【不要改路径 / 改名】本文件名为 `schema.sql`，但位于 `resources/db/` 子目录 ——
@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS `tb_tool_version` (
   `file_name`     varchar(255) NOT NULL COMMENT '原始文件名（含扩展名）',
   `file_ext`      varchar(20)  NOT NULL COMMENT '文件格式（小写）',
   `file_size`     bigint       NOT NULL COMMENT '文件大小（字节）',
+  `storage_backend` varchar(8) NOT NULL DEFAULT 'local' COMMENT '文件落点：local 本机磁盘 / oss 阿里云 OSS（M-22）',
   `uploader_id`   bigint       NOT NULL COMMENT '上传人',
   `download_count` int         NOT NULL DEFAULT 0 COMMENT '该版本下载次数',
   `create_time`   datetime     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '上传时间',

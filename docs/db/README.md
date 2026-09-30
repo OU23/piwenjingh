@@ -15,6 +15,7 @@
 | `02-seed-base.sql` | 种子数据：6 个基础标签 + 默认设置 `maxFileSize`（**刻意不种 `storageRoot`**） | ⚠️ **可选 / 与初始化重叠** | `INSERT IGNORE` |
 | `03-align-schema.sql` | **老库**列默认值 / `ON UPDATE` 对齐 + 零日期清理 | 🕘 **仅老库**（新库跑 `schema.sql` 已含） | `ALTER` 幂等 |
 | `04-add-tool-grant.sql` | **老库**增量：补 M-17 的 `tb_tool_grant` 表 | 🕘 **仅老库**（`schema.sql` 已含该表） | `CREATE TABLE IF NOT EXISTS` |
+| `05-add-storage-backend.sql` | **老库**增量：补 M-22 的 `tb_tool_version.storage_backend` **列**（文件落点） | 🕘 **仅老库**（`schema.sql` 已含该列） | `information_schema` 探测 + 动态 SQL |
 
 **关于命名与编号**：原 `01-init-tables.sql` 已按标准命名为 **`schema.sql`**（全量、幂等）；
 `02` / `03` / `04` **保留原编号文件名** —— 它们是被历史交付报告与运维记录直接引用的**增量脚本**，
@@ -30,6 +31,8 @@
 
 > B5（下载稳健性）/ B7（Excel 导入导出）/ B8（单账号单登录）/ B9 / B10 / P11 / P13 **均未引入新表、未改列** ——
 > 所以表数仍是 9，不会再冒出第 10 张。
+>
+> **M-22（阿里云 OSS 对接，契约 v1.19）只给 `tb_tool_version` 加了 1 列 `storage_backend`，未加表** —— 表数仍为 **9**。
 
 ---
 
@@ -52,6 +55,7 @@ mysql -u root -p toolbox < backend/src/main/resources/db/02-seed-base.sql
 ```bash
 mysql -u root -p toolbox < backend/src/main/resources/db/04-add-tool-grant.sql   # ① 必做：补 M-17 新表
 mysql -u root -p toolbox < backend/src/main/resources/db/03-align-schema.sql     # ② 建议：列无默认值 / 无 ON UPDATE 时执行
+mysql -u root -p toolbox < docs/db/05-add-storage-backend.sql                    # ③ 必做（v1.19 / M-22 起）：补新列 storage_backend
 ```
 
 ⚠️ **为什么必须手工执行**：本目录脚本**只由人工执行** —— 后端代码零引用，
@@ -75,6 +79,10 @@ SELECT COUNT(*) AS 标签数 FROM tb_tag;
 -- 期望：每张表的 create_time 都有默认值（老库未对齐时才需要看这个）
 SELECT table_name, column_name, column_default FROM information_schema.columns
  WHERE table_schema = 'toolbox' AND column_name = 'create_time';
+
+-- 期望：1 行（storage_backend | local）。**0 行 = 未跑 05-add-storage-backend.sql**（老库升级必查）
+SELECT column_name, column_default FROM information_schema.columns
+ WHERE table_schema = 'toolbox' AND table_name = 'tb_tool_version' AND column_name = 'storage_backend';
 ```
 
 ---
