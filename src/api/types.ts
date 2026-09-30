@@ -97,6 +97,51 @@ export const BizCode = {
   STORAGE_UNAVAILABLE: 2003,
   TOOL_NOT_FOUND: 2004,
   FILE_KEY_INVALID: 2005,
+  /** v1.19 新增（M-22）：对象存储暂不可用（OSS 故障**不**影响登录 / 检索 / 本地下载） */
+  OBJECT_STORAGE_UNAVAILABLE: 2006,
 } as const;
 
 export type BizCodeValue = (typeof BizCode)[keyof typeof BizCode];
+
+/**
+ * 下载地址签发结果（契约 v1.19 §9.5 新增，`DownloadUrlVO`）
+ *
+ * 后端**先鉴权后签发**：OSS 文件给短时效签名直链，本地文件给后端 `?token=` 地址。
+ * 前端对两者**同一动作**（导航下载），不区分处理。
+ */
+export interface DownloadUrlVO {
+  /** 可直接访问的短时效地址：`direct=true` 为对象存储预签名 URL；否则为后端令牌下载地址 */
+  url: string;
+  /** 该地址有效期（秒）；OSS 默认 3600，后端令牌 ≤ 60 */
+  expiresIn: number;
+  /** `true` = 浏览器**直连对象存储**（字节不过后端）；`false` = 由**后端代理**返回 */
+  direct: boolean;
+}
+
+/** 迁移失败明细（契约 v1.19 §9.9） */
+export interface MigrationFailure {
+  versionId: ID;
+  /** 面向用户/运维的中文失败原因 */
+  reason: string;
+}
+
+/**
+ * 存量迁移任务（契约 v1.19 §9.9，`MigrationTaskVO`）
+ *
+ * **任务模型**：本期后端同步跑完（`POST` 即返回 `COMPLETED`），
+ * 将来改为异步时只换后端执行器 —— 前端"未完成则轮询"的分支**无需改动**。
+ */
+export interface MigrationTaskVO {
+  taskId: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+  /** 待迁移总数（未知时 null） */
+  total: number | null;
+  migrated: number;
+  failed: number;
+  /** 跳过数（已是对象存储落点） */
+  skipped: number;
+  /** 失败明细（后端可截断） */
+  failures: MigrationFailure[];
+  startedAt: string;
+  finishedAt: string | null;
+}

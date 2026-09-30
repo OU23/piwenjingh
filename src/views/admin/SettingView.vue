@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import PageContainer from '@/components/PageContainer.vue';
+import StorageMigrationPanel from '@/components/StorageMigrationPanel.vue';
 import { getSettings, saveSettings, type SettingVO } from '@/api/setting';
 import { PERMISSION } from '@/constants/permissions';
 import { useUserStore } from '@/stores/user';
@@ -143,6 +144,9 @@ onMounted(() => {
           <el-button v-if="canSave" type="primary" :loading="saving" @click="handleSave">保存设置</el-button>
           <span v-else class="tb-muted">你没有修改全局设置的权限，当前为只读查看。</span>
         </div>
+
+        <!-- 存量迁移到对象存储（M-22 / F-17；无 sys:setting 权限时该区块不渲染） -->
+        <StorageMigrationPanel />
       </div>
     </PageContainer>
   </div>

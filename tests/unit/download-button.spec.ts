@@ -1,64 +1,54 @@
 /**
- * 测试范围：下载按钮（src/components/DownloadButton.vue）——进度、取消、续传、重复点击保护
+ * 测试范围：下载按钮（src/components/DownloadButton.vue）——「取 URL → 导航下载」
  * 测试类型：组件（jsdom）
- * 测试目的：保证"下载可中断、可续传、不会一次点击产生多份下载"
- * 防回归问题：重复点击触发多份下载、中断后必须从头再来、取消保存框后仍发起请求
+ * 测试目的：锁死契约 v1.19 §9.5 的新下载口径：**先向后端签发地址，再由浏览器导航下载**
+ * 防回归问题：绕开签发接口自行拼地址、把 OSS 直链与本地代理地址分开处理、
+ *   签发中重复点击产生多份下载、失败时静默不提示
  * 关键不变量：
- *   - 选择保存位置期间重复点击只触发一次保存框
- *   - 中断后按钮变为"继续下载"，再次点击复用同一目标并携带 Range
- *   - 用户取消保存位置选择 → 不发起下载请求
- * 边界说明：不覆盖真实浏览器保存框与真实网络；GB 级实测见 P5
- * 依赖与限制：fetch 与保存目标提供方均为桩；Element Plus 以插件注册
+ *   - 点「下载」→ 调 `getDownloadUrl(toolId, versionId)` → 用返回的 url 触发 `<a>` 导航（两者同一动作）
+ *   - 签发中重复点击**只发起一次**请求
+ *   - 401 → 清登录态并跳登录页；403 / 业务码 → 就地提示后端 message；**失败不导航**
+ *   - 成功后通知父组件 `done`
+ * 边界说明：不覆盖真实浏览器下载器与真实网络；真实 OSS 直链体验见验收 B 组（⛓）
+ * 依赖与限制：接口层与 ElMessage 为桩；Element Plus 以插件注册
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia, type Pinia } from 'pinia';
 import { createMemoryHistory, createRouter, type Router } from 'vue-router';
 import ElementPlus from 'element-plus';
 import DownloadButton from '@/components/DownloadButton.vue';
-import { clearAllResume, type SaveTarget, type SaveTargetProvider } from '@/api/saveTarget';
+import { BizError, ForbiddenError, UnauthorizedError } from '@/api/request';
 import { routes } from '@/router';
 import { useUserStore } from '@/stores/user';
 
+const mocks = vi.hoisted(() => ({
+  info: vi.fn(),
+  error: vi.fn(),
+  success: vi.fn(),
+  warning: vi.fn(),
+  getDownloadUrl: vi.fn(),
+}));
+
+vi.mock('element-plus', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    ElMessage: { info: mocks.info, error: mocks.error, success: mocks.success, warning: mocks.warning },
+  };
+});
+
+// 只桩掉下载地址签发（其余 api 层能力本用例不需要）
+vi.mock('@/api/tool', () => ({ getDownloadUrl: mocks.getDownloadUrl }));
+
 let pinia: Pinia;
 let router: Router;
+/** 记录每次导航的真实 href（jsdom 会把相对地址解析成绝对地址） */
+let navigated: string[];
+/** 桩住 `HTMLAnchorElement.click`，只记录 href 并阻止真实跳转（不改变被测代码的调用方式） */
+let anchorClickSpy: { mockRestore: () => void };
 
-function bytes(text: string): Uint8Array {
-  return new TextEncoder().encode(text);
-}
-
-function createFakeTarget(): { target: SaveTarget; chunks: Uint8Array[] } {
-  const chunks: Uint8Array[] = [];
-  return {
-    chunks,
-    target: {
-      open: async () => ({
-        write: async (chunk: Uint8Array) => {
-          chunks.push(chunk);
-        },
-        seek: async () => undefined,
-        truncate: async () => undefined,
-        close: async () => undefined,
-        abort: async () => undefined,
-      }),
-    },
-  };
-}
-
-/** 首次请求返回可中断的流，用于验证取消与续传 */
-function interruptibleStream(controllerRef: { current: ReadableStreamDefaultController<Uint8Array> | null }) {
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      controllerRef.current = controller;
-      controller.enqueue(bytes('ab'));
-    },
-  });
-}
-
-async function mountButton(options: {
-  provider: SaveTargetProvider;
-  suggestedName?: string;
-}): Promise<VueWrapper> {
+async function mountButton(options?: { versionId?: string }): Promise<VueWrapper> {
   useUserStore().setLogin({
     token: 'token-value',
     user: {
@@ -77,8 +67,8 @@ async function mountButton(options: {
   const wrapper = mount(DownloadButton, {
     props: {
       toolId: '1001',
-      suggestedName: options.suggestedName ?? 'demo.zip',
-      provider: options.provider,
+      versionId: options?.versionId,
+      suggestedName: 'demo.zip',
     },
     global: { plugins: [pinia, router, ElementPlus] },
   });
@@ -87,122 +77,135 @@ async function mountButton(options: {
   return wrapper;
 }
 
-function buttonLabel(wrapper: VueWrapper): string {
-  return wrapper.get('button').text();
-}
-
 beforeEach(() => {
   pinia = createPinia();
   setActivePinia(pinia);
   router = createRouter({ history: createMemoryHistory(), routes });
-  // 续传记录常驻于模块作用域，测试之间必须清空，否则会互相影响
-  clearAllResume();
+
+  navigated = [];
+  // 桩掉导航动作：不真正跳转，只记录 href（不改变被测代码的调用方式）
+  anchorClickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    navigated.push(this.href);
+  });
 });
 
-describe('下载按钮', () => {
-  it('下载成功后回到初始状态，并携带令牌请求', async () => {
-    const { target } = createFakeTarget();
-    const provider: SaveTargetProvider = { supported: true, pick: vi.fn(async () => target) };
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(
-          new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.enqueue(bytes('demo'));
-              controller.close();
-            },
-          }),
-          { status: 200, headers: { 'Content-Length': '4' } },
-        ),
-    );
-    vi.stubGlobal('fetch', fetchMock);
+afterEach(() => {
+  anchorClickSpy.mockRestore();
+  vi.clearAllMocks();
+});
 
-    const wrapper = await mountButton({ provider });
+describe('下载按钮（取 URL → 导航下载）', () => {
+  it('点「下载」：向接口取地址并导航下载（OSS 直链原样使用）', async () => {
+    const signed =
+      'https://toolbox-files.oss-cn-hangzhou.aliyuncs.com/tools/abc.zip?Expires=1759212600&Signature=x';
+    mocks.getDownloadUrl.mockResolvedValue({ url: signed, expiresIn: 3600, direct: true });
+
+    const wrapper = await mountButton({ versionId: '3005' });
     await wrapper.get('button').trigger('click');
     await flushPromises();
 
-    expect(provider.pick).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(buttonLabel(wrapper)).toBe('下载');
+    expect(mocks.getDownloadUrl).toHaveBeenCalledTimes(1);
+    expect(mocks.getDownloadUrl).toHaveBeenCalledWith('1001', '3005');
+    // 直链为绝对地址：原样导航到 OSS（字节不过后端）
+    expect(navigated).toEqual([signed]);
+    expect(mocks.error).not.toHaveBeenCalled();
+    // 导航下载由浏览器接管：组件内不再有自定义进度节点
     expect(wrapper.find('.tb-dl__progress').exists()).toBe(false);
-
-    vi.unstubAllGlobals();
   });
 
-  it('中断后可续传：按钮变为"继续下载"，再次点击复用目标并携带 Range', async () => {
-    const { target } = createFakeTarget();
-    const provider: SaveTargetProvider = { supported: true, pick: vi.fn(async () => target) };
-    const controllerRef: { current: ReadableStreamDefaultController<Uint8Array> | null } = { current: null };
-
-    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
-      const signal = init.signal as AbortSignal;
-      const stream = interruptibleStream(controllerRef);
-      signal.addEventListener('abort', () => {
-        controllerRef.current?.error(new DOMException('Aborted', 'AbortError'));
-      });
-      return new Response(stream, { status: 200, headers: { 'Content-Length': '4' } });
+  it('本地文件（后端令牌地址）走同一动作：同样导航下载', async () => {
+    mocks.getDownloadUrl.mockResolvedValue({
+      url: '/api/tools/1001/download?token=tk&versionId=3005',
+      expiresIn: 60,
+      direct: false,
     });
-    vi.stubGlobal('fetch', fetchMock);
 
-    const wrapper = await mountButton({ provider });
-
-    await wrapper.get('button').trigger('click');
-    await flushPromises();
-    expect(buttonLabel(wrapper)).toBe('取消');
-
-    // 运行中点击 = 取消
-    await wrapper.get('button').trigger('click');
-    await flushPromises();
-    expect(buttonLabel(wrapper)).toBe('继续下载');
-
-    // 继续下载：不重新选择位置，且从已写位置续传
+    const wrapper = await mountButton({ versionId: '3005' });
     await wrapper.get('button').trigger('click');
     await flushPromises();
 
-    expect(provider.pick).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const [, secondInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
-    expect((secondInit.headers as Record<string, string>).Range).toBe('bytes=2-');
-
-    vi.unstubAllGlobals();
+    expect(navigated).toHaveLength(1);
+    expect(navigated[0]).toContain('/api/tools/1001/download?token=tk');
+    expect(mocks.getDownloadUrl).toHaveBeenCalledTimes(1);
   });
 
-  it('选择保存位置期间重复点击只触发一次', async () => {
-    const { target } = createFakeTarget();
-    let resolvePick: (value: SaveTarget | null) => void = () => undefined;
-    const pending = new Promise<SaveTarget | null>((resolve) => {
-      resolvePick = resolve;
+  it('签发中重复点击只发起一次请求', async () => {
+    let resolveIssue: (value: unknown) => void = () => undefined;
+    const pending = new Promise((resolve) => {
+      resolveIssue = resolve;
     });
-    const provider: SaveTargetProvider = { supported: true, pick: vi.fn(() => pending) };
-    vi.stubGlobal('fetch', vi.fn());
+    mocks.getDownloadUrl.mockReturnValue(pending);
 
-    const wrapper = await mountButton({ provider });
-
+    const wrapper = await mountButton();
     await wrapper.get('button').trigger('click');
     await wrapper.get('button').trigger('click');
     await wrapper.get('button').trigger('click');
     await flushPromises();
 
-    expect(provider.pick).toHaveBeenCalledTimes(1);
+    expect(mocks.getDownloadUrl).toHaveBeenCalledTimes(1);
+    expect(navigated).toHaveLength(0);
 
-    resolvePick(target);
+    resolveIssue({ url: '/api/tools/1001/download?token=tk', expiresIn: 60, direct: false });
     await flushPromises();
 
-    vi.unstubAllGlobals();
+    expect(navigated).toHaveLength(1);
   });
 
-  it('用户取消保存位置选择时不发起请求', async () => {
-    const provider: SaveTargetProvider = { supported: true, pick: vi.fn(async () => null) };
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
+  it('成功后通知父组件 done（列表/详情据此刷新下载次数）', async () => {
+    mocks.getDownloadUrl.mockResolvedValue({
+      url: '/api/tools/1001/download?token=tk',
+      expiresIn: 60,
+      direct: false,
+    });
 
-    const wrapper = await mountButton({ provider });
+    const wrapper = await mountButton();
     await wrapper.get('button').trigger('click');
     await flushPromises();
 
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(buttonLabel(wrapper)).toBe('下载');
+    expect(wrapper.emitted('done')).toHaveLength(1);
+  });
 
-    vi.unstubAllGlobals();
+  it('未登录（401）：清登录态、跳登录页，且不导航', async () => {
+    mocks.getDownloadUrl.mockRejectedValue(new UnauthorizedError('登录状态已失效，请重新登录'));
+    // 只断言"发起了跳转"：登录页为懒加载路由，断言最终路由会依赖异步导航完成时机
+    const pushSpy = vi.spyOn(router, 'push');
+
+    const wrapper = await mountButton();
+    await wrapper.get('button').trigger('click');
+    await flushPromises();
+
+    expect(navigated).toHaveLength(0);
+    expect(useUserStore().token).toBe('');
+    expect(mocks.error).toHaveBeenCalledWith('登录状态已失效，请重新登录');
+    expect(pushSpy).toHaveBeenCalledWith({ name: 'login' });
+
+    pushSpy.mockRestore();
+  });
+
+  it('无权限（403）：就地提示，不导航', async () => {
+    mocks.getDownloadUrl.mockRejectedValue(new ForbiddenError(''));
+
+    const wrapper = await mountButton();
+    await wrapper.get('button').trigger('click');
+    await flushPromises();
+
+    expect(navigated).toHaveLength(0);
+    expect(mocks.error).toHaveBeenCalledWith('无下载权限');
+    expect(useUserStore().token).toBe('token-value');
+  });
+
+  it('对象存储故障（2006）：提示后端原因，不导航（E-02 隔离：仅本次下载失败）', async () => {
+    mocks.getDownloadUrl.mockRejectedValue(new BizError(2006, '对象存储暂不可用'));
+
+    const wrapper = await mountButton();
+    await wrapper.get('button').trigger('click');
+    await flushPromises();
+
+    expect(navigated).toHaveLength(0);
+    expect(mocks.error).toHaveBeenCalledWith('对象存储暂不可用');
+    // 不影响登录态：用户仍处于登录状态，其他功能照常
+    expect(useUserStore().token).toBe('token-value');
   });
 });
