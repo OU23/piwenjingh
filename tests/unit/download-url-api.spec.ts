@@ -8,7 +8,7 @@
  *   - OSS 签名直链（绝对地址）**原样**返回
  *   - 后端代理地址（相对路径）：同源时原样；配了绝对 API 基址时补前缀且**不出现双斜杠**
  *   - `versionId` 省略时不带该查询参数
- *   - 迁移：`POST /api/tools/migrate-to-oss`（可带 limit）、`GET .../{taskId}`（taskId 需转义）
+ *   - 迁移：`POST /api/tools/migrate-to-oss`（limit 走 URL 查询参数，非 body）、`GET .../{taskId}`（taskId 需转义）
  * 边界说明：不覆盖真实网络与真实 OSS
  * 依赖与限制：@/api/request 为桩
  */
@@ -82,20 +82,22 @@ describe('下载地址签发（getDownloadUrl）', () => {
 });
 
 describe('存量迁移接口（契约 §9.9 任务模型）', () => {
-  it('发起迁移：不带 limit 时提交空对象', async () => {
+  it('发起迁移：不带 limit 时不携带查询参数', async () => {
     mocks.post.mockResolvedValue({ taskId: 'mig-1', status: 'COMPLETED' });
 
     await startMigration();
 
-    expect(mocks.post).toHaveBeenCalledWith('/api/tools/migrate-to-oss', {});
+    expect(mocks.post).toHaveBeenCalledWith('/api/tools/migrate-to-oss', undefined, undefined);
   });
 
-  it('发起迁移：带 limit 时按后端约定提交数字', async () => {
+  it('发起迁移：带 limit 时作为 URL 查询参数（后端 @RequestParam，放 body 会被丢弃）', async () => {
     mocks.post.mockResolvedValue({ taskId: 'mig-1', status: 'COMPLETED' });
 
     await startMigration(500);
 
-    expect(mocks.post).toHaveBeenCalledWith('/api/tools/migrate-to-oss', { limit: 500 });
+    expect(mocks.post).toHaveBeenCalledWith('/api/tools/migrate-to-oss', undefined, {
+      params: { limit: 500 },
+    });
   });
 
   it('查询进度：taskId 需转义后拼进路径（可回查同一结果）', async () => {

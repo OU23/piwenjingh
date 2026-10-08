@@ -463,7 +463,7 @@ onMounted(() => {
 .tb-filter__hint {
   font-size: var(--tb-font-xs);
   line-height: 1.4;
-  color: var(--tb-danger, #f56c6c);
+  color: var(--tb-danger);
 }
 
 .tb-filter__actions {

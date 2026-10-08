@@ -159,7 +159,7 @@ function apply(): void {
 .tb-filter__hint {
   font-size: var(--tb-font-xs);
   line-height: 1.4;
-  color: var(--tb-danger, #f56c6c);
+  color: var(--tb-danger);
 }
 
 /* 排序项：两个下拉并排放一行，避免堆叠把项撑高、在 flex-wrap 下错位 */

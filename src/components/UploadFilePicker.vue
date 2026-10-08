@@ -110,7 +110,7 @@ function openPicker(): void {
 .tb-picker__zone:hover,
 .tb-picker__zone.is-dragging {
   border-color: var(--tb-accent);
-  background: rgba(79, 140, 255, 0.06);
+  background: var(--tb-accent-soft);
 }
 
 .tb-picker__zone.is-disabled {

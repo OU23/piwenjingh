@@ -48,7 +48,7 @@ a {
 /* 提示条（与原型一致：左侧色条 + 淡底） */
 .tb-note {
   border-left: 3px solid var(--tb-warning);
-  background: rgba(255, 179, 71, 0.08);
+  background: var(--tb-warning-soft);
   border-radius: 0 var(--tb-radius-sm) var(--tb-radius-sm) 0;
   padding: var(--tb-gap-sm) var(--tb-gap);
   font-size: var(--tb-font-xs);
@@ -58,12 +58,12 @@ a {
 
 .tb-note.is-info {
   border-left-color: var(--tb-accent);
-  background: rgba(79, 140, 255, 0.08);
+  background: var(--tb-accent-soft);
 }
 
 .tb-note.is-danger {
   border-left-color: var(--tb-danger);
-  background: rgba(255, 107, 107, 0.08);
+  background: var(--tb-danger-soft);
 }
 
 /* 表格深色微调 */
@@ -84,5 +84,23 @@ a {
 }
 
 .el-table th.el-table__cell {
-  color: var(--tb-accent);
+  color: var(--tb-text-2);
+}
+
+/* 路由切换过渡（参考若依 Vue 的 fade-transform）：淡入 + 轻微横向位移 */
+.fade-transform-enter-active,
+.fade-transform-leave-active {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.fade-transform-enter-from {
+  opacity: 0;
+  transform: translateX(-16px);
+}
+
+.fade-transform-leave-to {
+  opacity: 0;
+  transform: translateX(16px);
 }

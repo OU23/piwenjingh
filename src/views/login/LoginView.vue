@@ -2,21 +2,33 @@
 import { onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox, type InputInstance } from 'element-plus';
+import { Lock, User } from '@element-plus/icons-vue';
 import { login } from '@/api/auth';
 import { BizError } from '@/api/request';
 import { getInitStatus } from '@/api/system';
 import { BizCode } from '@/api/types';
 import { useUserStore } from '@/stores/user';
+import {
+  clearRememberedAccount,
+  readRememberedAccount,
+  saveRememberedAccount,
+} from '@/utils/rememberedAccount';
 
 /**
- * 登录页：账号 + 密码
+ * 登录页：账号 + 密码（带前缀图标，参考若依登录页）
  * 账号由管理员创建，系统不提供自助注册；系统尚未初始化时给出初始化入口。
+ *
+ * 「记住密码」：进入时若本地存有账号密码则自动预填并勾选；登录成功后按勾选状态保存 / 清除。
+ * 登出只清除登录态，**不清除**记住的账号密码（故退出后再进本页仍为预填状态）。
  */
 const route = useRoute();
 const router = useRouter();
 const userStore = useUserStore();
 
-const form = reactive({ username: '', password: '' });
+const remembered = readRememberedAccount();
+const form = reactive({ username: remembered?.username ?? '', password: remembered?.password ?? '' });
+/** 默认勾选状态 = 是否已记住过账号（避免未授权时默认保存密码） */
+const remember = ref<boolean>(!!remembered);
 const errorMessage = ref('');
 const submitting = ref(false);
 const showInitEntry = ref(false);
@@ -61,6 +73,12 @@ async function handleSubmit(): Promise<void> {
           ...(force ? { force: true } : {}),
         });
         userStore.setLogin({ token: result.token, user: result.user });
+        // 记住密码：勾选则保存，未勾选则清除（登出不影响，见文件头说明）
+        if (remember.value) {
+          saveRememberedAccount(form.username.trim(), form.password);
+        } else {
+          clearRememberedAccount();
+        }
         ElMessage.success('登录成功');
         await redirectAfterLogin();
         return;
@@ -136,29 +154,58 @@ onMounted(async () => {
         <div class="tb-muted">请使用管理员分配的账号登录</div>
       </div>
 
-      <label class="tb-login__label" for="login-username">账号</label>
-      <el-input id="login-username" v-model="form.username" placeholder="请输入账号" @keyup.enter="handleSubmit" />
+      <div class="tb-login__field">
+        <label class="tb-login__label" for="login-username">账号</label>
+        <el-input
+          id="login-username"
+          v-model="form.username"
+          size="large"
+          placeholder="请输入账号"
+          @keyup.enter="handleSubmit"
+        >
+          <template #prefix>
+            <el-icon><User /></el-icon>
+          </template>
+        </el-input>
+      </div>
 
-      <label class="tb-login__label" for="login-password">密码</label>
-      <el-input
-        id="login-password"
-        ref="passwordRef"
-        v-model="form.password"
-        type="password"
-        show-password
-        placeholder="请输入密码"
-        @keyup.enter="handleSubmit"
-      />
+      <div class="tb-login__field">
+        <label class="tb-login__label" for="login-password">密码</label>
+        <el-input
+          id="login-password"
+          ref="passwordRef"
+          v-model="form.password"
+          size="large"
+          type="password"
+          show-password
+          placeholder="请输入密码"
+          @keyup.enter="handleSubmit"
+        >
+          <template #prefix>
+            <el-icon><Lock /></el-icon>
+          </template>
+        </el-input>
+      </div>
 
       <div v-if="errorMessage" class="tb-note is-danger tb-login__error">{{ errorMessage }}</div>
 
-      <el-button class="tb-login__submit" type="primary" :loading="submitting" @click="handleSubmit">登 录</el-button>
+      <div class="tb-login__row">
+        <el-checkbox id="login-remember" v-model="remember">记住密码</el-checkbox>
+      </div>
+
+      <el-button
+        class="tb-login__submit"
+        type="primary"
+        size="large"
+        :loading="submitting"
+        @click="handleSubmit"
+      >
+        登 录
+      </el-button>
 
       <div v-if="showInitEntry" class="tb-note is-info tb-login__init">
         系统尚未初始化，<router-link :to="{ name: 'init' }">前往初始化 →</router-link>
       </div>
-
-      <div class="tb-note is-info tb-login__tip">账号由管理员创建，如无账号请联系管理员开通。</div>
     </div>
   </div>
 </template>
@@ -173,7 +220,7 @@ onMounted(async () => {
 }
 
 .tb-login__card {
-  width: 360px;
+  width: 430px;
   background: var(--tb-panel);
   border: 1px solid var(--tb-border);
   border-radius: var(--tb-radius-lg);
@@ -186,29 +233,34 @@ onMounted(async () => {
 }
 
 .tb-login__title {
-  font-size: var(--tb-font-lg);
+  font-size: var(--tb-font-xl);
   font-weight: 700;
-  margin-bottom: var(--tb-gap-xs);
+  margin-bottom: var(--tb-gap-sm);
+}
+
+.tb-login__field {
+  margin-bottom: var(--tb-gap-lg);
 }
 
 .tb-login__label {
   display: block;
-  font-size: var(--tb-font-xs);
+  font-size: var(--tb-font-sm);
   color: var(--tb-text-2);
   margin: 0 0 var(--tb-gap-xs);
 }
 
 .tb-login__error {
-  margin: var(--tb-gap) 0 0;
+  margin: 0 0 var(--tb-gap);
+}
+
+.tb-login__row {
+  display: flex;
+  align-items: center;
+  margin-bottom: var(--tb-gap-lg);
 }
 
 .tb-login__submit {
   width: 100%;
-  margin-top: var(--tb-gap-lg);
-}
-
-.tb-login__tip {
-  margin-top: var(--tb-gap-lg);
 }
 
 .tb-login__init {

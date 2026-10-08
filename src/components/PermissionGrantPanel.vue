@@ -260,10 +260,10 @@ watch(activePanels, (names) => {
 .tb-perm__fold-count {
   margin-left: auto;
   margin-right: var(--tb-gap-sm);
-  padding: 1px 8px;
+  padding: 1px var(--tb-gap-sm);
   border-radius: 10px;
   font-size: var(--tb-font-xs);
-  background: rgba(0, 212, 170, 0.16);
+  background: var(--tb-success-soft);
   color: var(--tb-success);
 }
 
@@ -287,7 +287,7 @@ watch(activePanels, (names) => {
   border-radius: var(--tb-radius-sm);
   background: var(--tb-panel-3);
   scrollbar-width: thin;
-  scrollbar-color: #2c3550 transparent;
+  scrollbar-color: var(--tb-border) transparent;
 }
 
 .tb-perm__list::-webkit-scrollbar {
@@ -299,7 +299,7 @@ watch(activePanels, (names) => {
 }
 
 .tb-perm__list::-webkit-scrollbar-thumb {
-  background: #2c3550;
+  background: var(--tb-border);
   border-radius: 4px;
   border: 2px solid var(--tb-panel-3);
 }
@@ -309,8 +309,8 @@ watch(activePanels, (names) => {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 11px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+  padding: var(--tb-gap-sm) var(--tb-gap);
+  border-bottom: 1px solid var(--tb-border-soft);
   cursor: pointer;
 }
 
@@ -319,12 +319,12 @@ watch(activePanels, (names) => {
 }
 
 .tb-perm__li:hover {
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--tb-row-hover);
 }
 
 /* 已选项：左侧绿色标记，一眼可辨 */
 .tb-perm__li.is-on {
-  background: rgba(0, 212, 170, 0.05);
+  background: var(--tb-success-soft);
 }
 
 .tb-perm__li.is-on::before {
@@ -347,7 +347,7 @@ watch(activePanels, (names) => {
 
 .tb-perm__tool-meta {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--tb-font-xs);
   color: var(--tb-text-3);
   white-space: nowrap;
 }

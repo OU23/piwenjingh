@@ -270,7 +270,7 @@ watch(
   border-radius: var(--tb-radius-sm);
   background: var(--tb-panel-3);
   scrollbar-width: thin;
-  scrollbar-color: #2c3550 transparent;
+  scrollbar-color: var(--tb-border) transparent;
 }
 
 .tb-grant__list::-webkit-scrollbar {
@@ -282,7 +282,7 @@ watch(
 }
 
 .tb-grant__list::-webkit-scrollbar-thumb {
-  background: #2c3550;
+  background: var(--tb-border);
   border-radius: 4px;
   border: 2px solid var(--tb-panel-3);
 }
@@ -292,8 +292,8 @@ watch(
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 11px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+  padding: var(--tb-gap-sm) var(--tb-gap);
+  border-bottom: 1px solid var(--tb-border-soft);
   cursor: pointer;
 }
 
@@ -302,11 +302,11 @@ watch(
 }
 
 .tb-grant__li:hover {
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--tb-row-hover);
 }
 
 .tb-grant__li.is-on {
-  background: rgba(0, 212, 170, 0.05);
+  background: var(--tb-success-soft);
 }
 
 .tb-grant__li.is-on::before {
@@ -326,13 +326,13 @@ watch(
 }
 
 .tb-grant__acct {
-  font-size: 11px;
+  font-size: var(--tb-font-xs);
   color: var(--tb-text-3);
 }
 
 .tb-grant__meta {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--tb-font-xs);
   color: var(--tb-text-3);
   white-space: nowrap;
 }

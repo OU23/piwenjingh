@@ -272,7 +272,7 @@ watch(
   margin-left: 3px;
   border: 1px solid var(--tb-border);
   border-radius: 50%;
-  font-size: 9px;
+  font-size: 10px;
   font-style: normal;
   line-height: 1;
   color: var(--tb-text-3);

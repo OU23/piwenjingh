@@ -11,9 +11,14 @@ import { setupRouterGuards } from './router/guards';
 import { configureRequest } from './api/request';
 import { ws } from './api/ws';
 import { useUserStore } from './stores/user';
+import { applyTheme, readStoredTheme } from './stores/theme';
 import { handleSessionKicked } from './utils/sessionKicked';
 import './styles/tokens.css';
+import './styles/themes/ruoyi-blue.css';
 import './styles/index.css';
+
+// 首屏即应用已保存主题，避免闪烁（index.html 内联脚本已先行设置，属双保险）
+applyTheme(readStoredTheme());
 
 const app = createApp(App);
 

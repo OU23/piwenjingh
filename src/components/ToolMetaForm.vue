@@ -240,7 +240,7 @@ function handleSubmit(): void {
 
 .tb-meta__readonly {
   font-size: var(--tb-font-sm);
-  padding: 5px 0;
+  padding: var(--tb-gap-xs) 0;
 }
 
 .tb-meta__error {
