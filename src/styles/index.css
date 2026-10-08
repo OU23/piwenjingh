@@ -87,6 +87,37 @@ a {
   color: var(--tb-text-2);
 }
 
+/* ============================================================
+ * 全局：文字加粗（所有主题生效，消除"发虚"观感）
+ *   现状：正文 / 表格用 400 字重 + 偏灰的次级色 → 看起来虚。
+ *   说明：Windows 的「微软雅黑」只有 Regular / Bold 两档，取 600（映射到 Bold）
+ *         才会真正变粗；500 在该字库下会被当成 Regular（无变化）。
+ * ============================================================ */
+body {
+  font-weight: 500;
+}
+
+/* 表格：表头与单元格都提实 */
+.el-table th.el-table__cell,
+.el-table td.el-table__cell {
+  font-weight: 600;
+}
+
+/* 表单标签 / 描述项 / 选项标签（筛选栏那些"关键词/标签/格式"即属此类） */
+.el-form-item__label,
+.el-descriptions__label,
+.el-checkbox__label,
+.el-radio__label,
+.el-tabs__item {
+  font-weight: 600;
+}
+
+/* 次级 / 说明文字（原本最"虚"的那类） */
+.tb-muted,
+.tb-note {
+  font-weight: 600;
+}
+
 /* 路由切换过渡（参考若依 Vue 的 fade-transform）：淡入 + 轻微横向位移 */
 .fade-transform-enter-active,
 .fade-transform-leave-active {

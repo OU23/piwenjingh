@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import type { Component } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
@@ -40,6 +40,28 @@ const layoutStore = useLayoutStore();
 
 const menuGroups = computed(() => filterMenuGroups(MENU, userStore.permissions));
 const activeName = computed<string>(() => (typeof route.name === 'string' ? route.name : ''));
+
+/**
+ * 侧栏折叠/展开动画进行中标记。
+ * 侧栏折叠是 width 动画；而苹果主题给侧栏挂了 backdrop-filter（毛玻璃），
+ * 它按帧重算模糊 → 动画期间会掉帧。故动画期间让组件挂上 .is-animating，
+ * 由主题 CSS 临时关闭模糊，动画结束再恢复（静态时不损失玻璃质感）。
+ */
+const asideAnimating = ref(false);
+let asideAnimTimer: number | undefined;
+
+watch(
+  () => layoutStore.sidebarCollapsed,
+  () => {
+    asideAnimating.value = true;
+    window.clearTimeout(asideAnimTimer);
+    asideAnimTimer = window.setTimeout(() => {
+      asideAnimating.value = false;
+    }, 280); // 略大于 CSS 的 0.25s 过渡时长
+  },
+);
+
+onBeforeUnmount(() => window.clearTimeout(asideAnimTimer));
 
 /** 分组图标（按分组标题） */
 const GROUP_ICONS: Record<string, Component> = {
@@ -82,7 +104,10 @@ async function handleLogout(): Promise<void> {
 
 <template>
   <div class="tb-layout">
-    <aside class="tb-layout__aside" :class="{ 'is-collapsed': layoutStore.sidebarCollapsed }">
+    <aside
+      class="tb-layout__aside"
+      :class="{ 'is-collapsed': layoutStore.sidebarCollapsed, 'is-animating': asideAnimating }"
+    >
       <div class="tb-layout__brand">tool-box</div>
 
       <div class="tb-layout__nav">
@@ -169,7 +194,13 @@ async function handleLogout(): Promise<void> {
   flex-direction: column;
   background: var(--tb-sider-bg);
   overflow: hidden;
+  /* 侧栏右缘细线：浅色侧栏主题需要它分隔内容区；收起时透明以免留 1px 残线 */
+  border-right: 1px solid transparent;
   transition: width 0.25s ease;
+}
+
+.tb-layout__aside:not(.is-collapsed) {
+  border-right-color: var(--tb-sider-border);
 }
 
 .tb-layout__aside.is-collapsed {

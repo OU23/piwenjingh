@@ -2,10 +2,10 @@
  * 主题：若依经典 · 蓝
  *   浅色内容区 + 深色侧边栏（#2f4050）+ 主色 #1890ff
  *
- * 「一份主题 CSS = 一次全局换肤」：本文件是全站唯一的颜色定义处
- * （配合 tokens.css 的间距/圆角等结构令牌）。新增主题 = 复制本文件、
- * 改选择器 key 与配色即可，组件无需任何改动。
- *   选择器用 html[data-theme="<key>"]，key 与 stores/theme.ts 的 THEMES 对应。
+ * 「一份主题 CSS = 一次全局换肤」：本文件只写 --tb-* 颜色值即可。
+ * 结构令牌（间距/字号/圆角）与 Element Plus 桥接见 styles/tokens.css，对所有主题通用。
+ *   新增主题 = 复制本文件、改选择器 key 与配色；再到 stores/theme.ts 的 THEMES 加一行。
+ *   选择器用 html[data-theme="<key>"]，key 与 THEMES 里的 key 对应。
  * ============================================================ */
 html[data-theme='ruoyi-blue'] {
   /* ---- 内容区（浅色） ---- */
@@ -47,17 +47,4 @@ html[data-theme='ruoyi-blue'] {
   --tb-sider-border: #3a4b5c;
   --tb-brand-bg: #1890ff;
   --tb-brand-text: #ffffff;
-}
-
-/* Element Plus 变量覆盖（浅色 + 若依蓝主色） */
-html[data-theme='ruoyi-blue'] {
-  --el-color-primary: #1890ff;
-  --el-color-primary-light-3: #5db1ff;
-  --el-color-primary-light-5: #8bc7ff;
-  --el-color-primary-light-7: #b9ddff;
-  --el-color-primary-light-8: #d0e8ff;
-  --el-color-primary-light-9: #e7f3ff;
-  --el-color-primary-dark-2: #1373cc;
-  --el-border-radius-base: 4px;
-  --el-border-radius-small: 2px;
 }

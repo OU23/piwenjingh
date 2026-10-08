@@ -1,0 +1,57 @@
+/* ============================================================
+ * 主题：墨白 · 简约
+ *   暖中性灰（stone）+ 单一靛蓝强调色 + 浅色侧栏（hairline 边框）+ 墨色品牌条
+ *
+ * 设计原则（参考 B 端「极简高级」）：
+ *   - 95% 中性色（黑白灰），只用**一个**强调色（靛蓝）做孤岛（CTA / 链接 / 激活态）；
+ *   - 用 1px 细边框与留白建立层级，不用重阴影；
+ *   - 正文用 900 级暖黑（#1c1917）而非纯黑，避免眩光。
+ *
+ * 「一份主题 CSS = 一次全局换肤」：本文件只写 --tb-* 颜色值即可。
+ * 结构令牌与 Element Plus 桥接见 styles/tokens.css（对所有主题通用）。
+ * ============================================================ */
+html[data-theme='ink'] {
+  /* ---- 内容区（暖白 + 极浅灰） ---- */
+  --tb-bg: #f7f7f6;
+  --tb-panel: #ffffff;
+  --tb-panel-2: #f5f5f4;
+  --tb-panel-3: #f5f5f4;
+
+  /* ---- 边框（hairline） ---- */
+  --tb-border: #e7e5e4;
+  --tb-border-soft: #f2f1f0;
+
+  /* ---- 文字（暖黑，非纯黑） ---- */
+  --tb-text: #1c1917;
+  --tb-text-2: #78716c;
+  --tb-text-3: #a8a29e;
+
+  /* ---- 唯一强调色：靛蓝 ---- */
+  --tb-accent: #4f46e5;
+  --tb-accent-hover: #6366f1;
+  --tb-accent-soft: rgba(79, 70, 229, 0.08);
+
+  /* ---- 功能色（略深、低饱和 → 更克制） ---- */
+  --tb-success: #16a34a;
+  --tb-success-soft: rgba(22, 163, 74, 0.1);
+  --tb-warning: #d97706;
+  --tb-warning-soft: rgba(217, 119, 6, 0.1);
+  --tb-danger: #dc2626;
+  --tb-danger-soft: rgba(220, 38, 38, 0.1);
+
+  /* ---- 交互底色 ---- */
+  --tb-row-hover: rgba(28, 25, 23, 0.04);
+
+  /* ---- 浅色侧边栏（白底 + 细边框，激活态为浅灰块 + 靛蓝竖条） ---- */
+  --tb-sider-bg: #ffffff;
+  --tb-sider-bg-hover: #f5f5f4;
+  --tb-sider-bg-active: #f5f5f4;
+  --tb-sider-text: #57534e;
+  --tb-sider-text-active: #1c1917;
+  --tb-sider-group: #78716c;
+  --tb-sider-border: #e7e5e4;
+
+  /* ---- 品牌区：融入侧栏（不用整块深色，避免违和），仅靠字号与留白区分 ---- */
+  --tb-brand-bg: #ffffff;
+  --tb-brand-text: #1c1917;
+}

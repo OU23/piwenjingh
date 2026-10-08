@@ -11,10 +11,14 @@ export interface ThemeDef {
 
 /**
  * 主题清单。
- * 本期仅一套（若依经典·蓝）；新增主题只需：① 加一个 themes/<key>.css；② 在此追加一项。
+ * 新增主题只需：① 加一个 themes/<key>.css；② 在此追加一项。
  * 组件与样式无需任何改动 —— 「一份主题 CSS = 一次全局换肤」。
  */
-export const THEMES: ThemeDef[] = [{ key: 'ruoyi-blue', label: '若依蓝', dark: false }];
+export const THEMES: ThemeDef[] = [
+  { key: 'ruoyi-blue', label: '若依蓝', dark: false },
+  { key: 'ink', label: '墨白', dark: false },
+  { key: 'apple', label: '苹果风', dark: false },
+];
 
 /** localStorage 键名 */
 export const THEME_STORAGE_KEY = 'toolbox-theme';

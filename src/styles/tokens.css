@@ -1,5 +1,6 @@
 /* 结构令牌（与皮肤无关）：圆角 / 间距 / 字号 / 布局尺寸 / 层级。
- * 颜色令牌全部下沉到 themes/<主题>.css —— 「一份主题 CSS = 一次全局换肤」，组件零改动。 */
+ * 颜色令牌全部下沉到 themes/<主题>.css —— 「一份主题 CSS = 一次全局换肤」，组件零改动。
+ * 文件末的「Element Plus 桥接」只引用令牌、不含具体色值，故对所有主题通用。 */
 :root {
   /* 圆角（若依风格偏小） */
   --tb-radius-sm: 2px;
@@ -27,7 +28,7 @@
   /* 层级 */
   --tb-z-header: 100;
 
-  /* Element Plus 对齐：字号与控件尺寸跟随全局放大（EP 默认 14px / 32px） */
+  /* Element Plus 对齐：字号 / 控件尺寸 / 圆角跟随全局（EP 默认 14px / 32px / 4px） */
   --el-font-size-extra-small: 13px;
   --el-font-size-small: 14px;
   --el-font-size-base: 16px;
@@ -36,4 +37,103 @@
   --el-component-size: 36px;
   --el-component-size-large: 42px;
   --el-component-size-small: 30px;
+  --el-border-radius-base: 4px;
+  --el-border-radius-small: 2px;
+}
+
+/* ============================================================
+ * Element Plus 基础色桥接（与主题无关）
+ * 把 EP 基础色指向我们的 --tb-* 令牌 → EP 组件（表格/弹窗/表单/分页/标签/提示）
+ * 随主题一起换肤。因只引用令牌、不含具体色值，此处定义一次 → 所有主题通用，
+ * 故「主题 = 一份只写 --tb-* 颜色值的小 CSS」。
+ * 色阶（light-N / dark-2）用 color-mix 按「语义色 → 面板色」计算：
+ *   浅色主题自动向白靠、深色主题自动向深色靠。
+ * ⚠️ 依赖 color-mix（Chromium 111+ / Firefox 113+）；不支持时回落到 EP 默认值。
+ * ============================================================ */
+:root {
+  /* 背景 */
+  --el-bg-color: var(--tb-panel);
+  --el-bg-color-page: var(--tb-bg);
+  --el-bg-color-overlay: var(--tb-panel);
+
+  /* 文字 */
+  --el-text-color-primary: var(--tb-text);
+  --el-text-color-regular: var(--tb-text-2);
+  --el-text-color-secondary: var(--tb-text-3);
+  --el-text-color-placeholder: var(--tb-text-3);
+  --el-text-color-disabled: var(--tb-text-3);
+
+  /* 边框 */
+  --el-border-color: var(--tb-border);
+  --el-border-color-light: var(--tb-border);
+  --el-border-color-lighter: var(--tb-border-soft);
+  --el-border-color-extra-light: var(--tb-border-soft);
+  --el-border-color-dark: var(--tb-border);
+  --el-border-color-darker: var(--tb-border);
+
+  /* 填充 */
+  --el-fill-color: var(--tb-panel-2);
+  --el-fill-color-light: var(--tb-panel-2);
+  --el-fill-color-lighter: var(--tb-panel);
+  --el-fill-color-extra-light: var(--tb-panel);
+  --el-fill-color-dark: var(--tb-panel-3);
+  --el-fill-color-darker: var(--tb-panel-3);
+  --el-fill-color-blank: var(--tb-panel);
+
+  /* 禁用态 */
+  --el-disabled-bg-color: var(--tb-panel-2);
+  --el-disabled-text-color: var(--tb-text-3);
+  --el-disabled-border-color: var(--tb-border);
+
+  /* 遮罩 / 覆盖层（用面板色淡出，浅深主题自适应） */
+  --el-mask-color: color-mix(in srgb, var(--tb-panel) 90%, transparent);
+  --el-mask-color-extra-light: color-mix(in srgb, var(--tb-panel) 30%, transparent);
+
+  /* 语义基色 */
+  --el-color-primary: var(--tb-accent);
+  --el-color-success: var(--tb-success);
+  --el-color-warning: var(--tb-warning);
+  --el-color-danger: var(--tb-danger);
+  --el-color-error: var(--tb-danger);
+  --el-color-info: var(--tb-text-3);
+
+  /* 主色阶 */
+  --el-color-primary-light-3: color-mix(in srgb, var(--tb-accent) 70%, var(--tb-panel));
+  --el-color-primary-light-5: color-mix(in srgb, var(--tb-accent) 50%, var(--tb-panel));
+  --el-color-primary-light-7: color-mix(in srgb, var(--tb-accent) 30%, var(--tb-panel));
+  --el-color-primary-light-8: color-mix(in srgb, var(--tb-accent) 20%, var(--tb-panel));
+  --el-color-primary-light-9: color-mix(in srgb, var(--tb-accent) 10%, var(--tb-panel));
+  --el-color-primary-dark-2: color-mix(in srgb, var(--tb-accent) 80%, #000);
+
+  /* 成功色阶 */
+  --el-color-success-light-3: color-mix(in srgb, var(--tb-success) 70%, var(--tb-panel));
+  --el-color-success-light-5: color-mix(in srgb, var(--tb-success) 50%, var(--tb-panel));
+  --el-color-success-light-7: color-mix(in srgb, var(--tb-success) 30%, var(--tb-panel));
+  --el-color-success-light-8: color-mix(in srgb, var(--tb-success) 20%, var(--tb-panel));
+  --el-color-success-light-9: color-mix(in srgb, var(--tb-success) 10%, var(--tb-panel));
+  --el-color-success-dark-2: color-mix(in srgb, var(--tb-success) 80%, #000);
+
+  /* 警告色阶 */
+  --el-color-warning-light-3: color-mix(in srgb, var(--tb-warning) 70%, var(--tb-panel));
+  --el-color-warning-light-5: color-mix(in srgb, var(--tb-warning) 50%, var(--tb-panel));
+  --el-color-warning-light-7: color-mix(in srgb, var(--tb-warning) 30%, var(--tb-panel));
+  --el-color-warning-light-8: color-mix(in srgb, var(--tb-warning) 20%, var(--tb-panel));
+  --el-color-warning-light-9: color-mix(in srgb, var(--tb-warning) 10%, var(--tb-panel));
+  --el-color-warning-dark-2: color-mix(in srgb, var(--tb-warning) 80%, #000);
+
+  /* 危险色阶 */
+  --el-color-danger-light-3: color-mix(in srgb, var(--tb-danger) 70%, var(--tb-panel));
+  --el-color-danger-light-5: color-mix(in srgb, var(--tb-danger) 50%, var(--tb-panel));
+  --el-color-danger-light-7: color-mix(in srgb, var(--tb-danger) 30%, var(--tb-panel));
+  --el-color-danger-light-8: color-mix(in srgb, var(--tb-danger) 20%, var(--tb-panel));
+  --el-color-danger-light-9: color-mix(in srgb, var(--tb-danger) 10%, var(--tb-panel));
+  --el-color-danger-dark-2: color-mix(in srgb, var(--tb-danger) 80%, #000);
+
+  /* 信息色阶 */
+  --el-color-info-light-3: color-mix(in srgb, var(--tb-text-3) 70%, var(--tb-panel));
+  --el-color-info-light-5: color-mix(in srgb, var(--tb-text-3) 50%, var(--tb-panel));
+  --el-color-info-light-7: color-mix(in srgb, var(--tb-text-3) 30%, var(--tb-panel));
+  --el-color-info-light-8: color-mix(in srgb, var(--tb-text-3) 20%, var(--tb-panel));
+  --el-color-info-light-9: color-mix(in srgb, var(--tb-text-3) 10%, var(--tb-panel));
+  --el-color-info-dark-2: color-mix(in srgb, var(--tb-text-3) 80%, #000);
 }

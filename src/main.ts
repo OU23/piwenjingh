@@ -14,7 +14,9 @@ import { useUserStore } from './stores/user';
 import { applyTheme, readStoredTheme } from './stores/theme';
 import { handleSessionKicked } from './utils/sessionKicked';
 import './styles/tokens.css';
-import './styles/themes/ruoyi-blue.css';
+// 主题样式：自动载入 styles/themes/*.css —— 新增主题只需放入一个 CSS 文件并在 stores/theme.ts 登记一行。
+// 各主题用 html[data-theme="<key>"] 选择器隔离，故加载顺序无关。
+import.meta.glob('./styles/themes/*.css', { eager: true });
 import './styles/index.css';
 
 // 首屏即应用已保存主题，避免闪烁（index.html 内联脚本已先行设置，属双保险）
