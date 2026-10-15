@@ -22,6 +22,10 @@
         <jjwt.version>0.12.6</jjwt.version>
         <mybatis-plus.version>3.5.7</mybatis-plus.version>
         <aliyun-oss.version>3.17.4</aliyun-oss.version>
+        <!-- M-23 / B14：直传临时凭证（STS）。core 必须显式声明 —— sts 对它是 optional 依赖，
+             且它同时把 oss 传递引入的 core 4.5.10 顶到 4.7.3（同线向后兼容）。 -->
+        <aliyun-sts.version>3.1.3</aliyun-sts.version>
+        <aliyun-sdk-core.version>4.7.3</aliyun-sdk-core.version>
     </properties>
 
     <dependencies>
@@ -69,6 +73,20 @@
             <groupId>org.glassfish.jaxb</groupId>
             <artifactId>jaxb-runtime</artifactId>
             <version>2.3.3</version>
+        </dependency>
+
+        <!-- 直传临时凭证（M-23 / B14）：STS AssumeRole 签发「限前缀 + 限动作 + 短时效」的临时凭证。
+             技术选型 v1.20 已登记。⚠️ core 必须显式声明：sts 3.1.3 对 core 是 optional 依赖，
+             不加会 NoClassDefFoundError。 -->
+        <dependency>
+            <groupId>com.aliyun</groupId>
+            <artifactId>aliyun-java-sdk-core</artifactId>
+            <version>${aliyun-sdk-core.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.aliyun</groupId>
+            <artifactId>aliyun-java-sdk-sts</artifactId>
+            <version>${aliyun-sts.version}</version>
         </dependency>
 
         <!-- 持久层：MyBatis-Plus（Boot 3 专用 starter，版本照技术选型，禁止升降级） -->

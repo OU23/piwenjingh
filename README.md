@@ -2,7 +2,8 @@
 
 > 工具管理箱后端服务：文件存储 + 分片上传 + 部门隔离的工具检索与下载。  
 > 技术栈：Java 17 · Spring Boot 3.2.5 · MyBatis-Plus 3.5.7 · MySQL 8 · Maven。  
-> 本文件是**启动说明**；配置样例见同目录 `application-example.yml`，人工验收见 `../docs/交付/后端人工验收手册.md`。
+> 本文件是**启动说明**；配置见 `src/main/resources/application.yml`（基础）+ `application-dev.yml` / `application-prod.yml`（profile），
+> 部署与人工验收见文档仓库 `tool-box-bak/docs/`（如 `部署配置说明.md`、`交付/后端人工验收手册.md`）。
 
 ---
 
@@ -40,7 +41,18 @@ mysql -u root -p toolbox < docs/db/02-seed-base.sql
 
 # ③ 表结构对齐（幂等；**库由旧版脚本建时必须跑一次**）
 mysql -u root -p toolbox < docs/db/03-align-schema.sql
+
+# ④ 增量：补 tb_tool_grant 表（M-17；**老库必做** —— schema.sql 已含该表，对老库无效）
+mysql -u root -p toolbox < docs/db/04-add-tool-grant.sql
+
+# ⑤ 增量：补 tb_tool_version.storage_backend 列（M-22；**老库必做** —— 同上）
+mysql -u root -p toolbox < docs/db/05-add-storage-backend.sql
 ```
+
+⚠️ **老库升级 = 按编号顺序执行 ②~⑤**（全部幂等，DDL 即时生效、**跑完无需重启后端**）。
+只跑 `schema.sql` **不会给已存在的表补列 / 补表** → 典型症状是**登录与列表正常，但上传 /
+下载 / 可见范围等接口 500**（日志 `Unknown column 'xxx'` 或 `Table 'xxx' doesn't exist`）。
+**交付时 `docs/db/` 必须整个目录带上服务器。**
 
 > **③ 为什么需要**：`CREATE TABLE IF NOT EXISTS` **不会修改已存在的表**。若库是更早版本的
 > 建表脚本建的，后补的 `DEFAULT CURRENT_TIMESTAMP` / `ON UPDATE` 不会生效 → 任何

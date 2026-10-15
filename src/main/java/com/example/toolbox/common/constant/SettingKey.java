@@ -11,6 +11,9 @@ public final class SettingKey {
     /** 单文件大小上限（字节） */
     public static final String MAX_FILE_SIZE = "maxFileSize";
 
+    /** 上传分片大小（字节，M-23 / B14）；`local` 模式即切片大小，`oss` 直传即 OSS part 大小 */
+    public static final String CHUNK_SIZE = "chunkSize";
+
     private SettingKey() {
     }
 }

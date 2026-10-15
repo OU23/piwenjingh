@@ -1,14 +1,19 @@
 # ============================================================
-# tool-box 后端 · 配置样例（**不含任何密钥**）
+# tool-box 后端 · dev profile 配置（本机开发 / 单机部署；**不含任何密钥**）
 #
-# 用法：
-#   1) 复制为 src/main/resources/application-local.yml（或直接改 application.yml）
-#   2) 口令与密钥**必须**通过环境变量注入，不要写进文件：
-#        MYSQL_PASSWORD     —— 数据库口令（必填，缺失则启动失败）
-#        JWT_SECRET         —— 令牌签名密钥（生产必填，建议 ≥ 32 字符随机串）
-#        TOOLBOX_STORAGE_ROOT —— 工具文件存储根目录（可选，统一正斜杠）
-#        TOOLBOX_CHUNK_DIR  —— 分片临时目录（可选，GB 级上传需留足空间）
-#   3) 启动前设好环境变量；本文件仅演示"有哪些可配项、默认值是多少"
+# 生效方式：启动时激活 dev profile（**必须** —— 基础 application.yml 不含数据源，
+#   不指定 profile 会因「无 datasource」启动失败）：
+#     本地：mvn spring-boot:run -Dspring-boot.run.profiles=dev
+#           java -jar toolbox-1.0.0.jar --spring.profiles.active=dev
+#     服务器（systemd）：在 ExecStart 末尾加 --spring.profiles.active=dev
+#   prod 环境请改用 application-prod.yml（**变量名不同**，见《部署配置说明》§6.5）。
+#
+# 口令与密钥**必须**通过环境变量注入，不要写进文件：
+#   MYSQL_PASSWORD       —— 数据库口令（必填，缺失则启动失败）
+#   JWT_SECRET           —— 令牌签名密钥（生产必填，建议 ≥ 32 字符随机串）
+#   TOOLBOX_STORAGE_ROOT —— 工具文件存储根目录（可选，统一正斜杠）
+#   TOOLBOX_CHUNK_DIR    —— 分片临时目录（可选，GB 级上传需留足空间）
+# 本文件只声明「有哪些可配项、默认值是多少」。
 # ============================================================
 
 server:

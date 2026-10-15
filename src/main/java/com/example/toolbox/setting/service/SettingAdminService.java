@@ -49,14 +49,16 @@ public class SettingAdminService {
         return SettingVO.builder()
                 .storageRoot(canSeeRoot ? settingService.getStorageRoot() : null)
                 .maxFileSize(settingService.getMaxFileSize())
+                .chunkSize(settingService.getChunkSize())
                 .build();
     }
 
     /** 保存全局设置（需 `sys:setting`） */
     @Transactional
     public void save(SettingSaveDTO dto) {
-        if (dto == null || (dto.getStorageRoot() == null && dto.getMaxFileSize() == null)) {
-            throw new BusinessException(Code.PARAM_INVALID, "至少需要提交一项设置（storageRoot 或 maxFileSize）");
+        if (dto == null || (dto.getStorageRoot() == null && dto.getMaxFileSize() == null && dto.getChunkSize() == null)) {
+            throw new BusinessException(Code.PARAM_INVALID,
+                    "至少需要提交一项设置（storageRoot / maxFileSize / chunkSize）");
         }
         if (dto.getStorageRoot() != null) {
             String root = PathUtils.normalizeSlashes(dto.getStorageRoot());
@@ -71,6 +73,15 @@ public class SettingAdminService {
                 throw new BusinessException(Code.PARAM_INVALID, "单文件大小上限必须为正整数");
             }
             settingService.putValue(SettingKey.MAX_FILE_SIZE, String.valueOf(dto.getMaxFileSize()));
+        }
+        if (dto.getChunkSize() != null) {
+            long chunk = dto.getChunkSize();
+            if (chunk < SettingService.MIN_CHUNK_SIZE || chunk > SettingService.MAX_CHUNK_SIZE) {
+                throw new BusinessException(Code.PARAM_INVALID,
+                        "分片大小需在 " + mb(SettingService.MIN_CHUNK_SIZE) + " ~ "
+                                + mb(SettingService.MAX_CHUNK_SIZE) + " MB 之间");
+            }
+            settingService.putValue(SettingKey.CHUNK_SIZE, String.valueOf(chunk));
         }
         auditLogger.write(currentOperator(), "SETTING_SAVE", "setting", "OK");
     }
@@ -97,6 +108,11 @@ public class SettingAdminService {
         if (!Files.isWritable(path)) {
             throw new BusinessException(Code.STORAGE_UNAVAILABLE, "存储路径不可写：" + root);
         }
+    }
+
+    /** 字节 → MB（仅用于错误提示文案） */
+    private static long mb(long bytes) {
+        return bytes / (1024 * 1024);
     }
 
     private LoginUser requireLogin() {

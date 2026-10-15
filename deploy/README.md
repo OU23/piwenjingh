@@ -14,16 +14,33 @@
 
 ## 2. 数据库人工初始化
 
-应用启动不会自动创建数据库或执行 SQL。请在**项目根目录**手动执行：
+应用启动不会自动创建数据库或执行 SQL。请在**项目根目录**手动执行。
+
+### 2.1 新库：一次性建全表
 
 ```bash
-# 新库：创建全部当前表结构
 mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/schema.sql
-
-# 老库升级：按需执行
-mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/04-add-tool-grant.sql
-mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/03-align-schema.sql
 ```
+
+### 2.2 老库升级：按编号顺序执行增量脚本
+
+`schema.sql` 用的是 `CREATE TABLE IF NOT EXISTS` —— **表已存在时它不做任何改动**，
+因此**已初始化的老库不会自动补列 / 补表**，必须手动执行下列增量脚本（**按编号从小到大**）：
+
+```bash
+mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/02-seed-base.sql            # 基础种子数据（标签 / 默认设置）
+mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/03-align-schema.sql         # 时间列对齐（补 DEFAULT / ON UPDATE）
+mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/04-add-tool-grant.sql       # 新增 tb_tool_grant（M-17 定向授权）
+mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/05-add-storage-backend.sql  # tb_tool_version 加 storage_backend（M-22 OSS）
+```
+
+⚠️ 三条要点：
+
+- **`docs/db/` 必须整个目录随部署包上传**，只带 `schema.sql` 会导致老库缺列 / 缺表。
+  典型症状：**登录与列表正常，但上传 / 下载 / 可见范围等接口 500**，日志报
+  `Unknown column 'xxx' in 'field list'` 或 `Table 'xxx' doesn't exist`。
+- 上述脚本**全部幂等**，可重复执行；**DDL 即时生效，执行后无需重启后端**。
+- **每次版本新增了 `NN-*.sql`，都要先在此处补一行**，再交付。
 
 新库创建首个管理员时，启动服务后调用既有 `POST /api/system/init` 接口；数据库 SQL 不会创建管理员明文密码。
 

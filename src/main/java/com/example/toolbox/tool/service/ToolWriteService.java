@@ -228,6 +228,10 @@ public class ToolWriteService {
         v.setFileExt(normalizeExt(fileExt));
         v.setFileSize(fileSize);
         v.setUploaderId(uploaderId);
+        // ★ 落点字段必须随写入后端一起落库（契约 M-22 / 数据模型 §5.5）：
+        //   文件实际写到 writeBackend（local / oss），storage_backend 就记这个值，
+        //   否则读取 / 删除会按"默认 local"路由到错误后端，OSS 文件永远删不掉、下载签不出。
+        v.setStorageBackend(storageService.backend().value());
         v.setDownloadCount(0);
         v.setCreateTime(LocalDateTime.now());
         toolVersionMapper.insert(v);

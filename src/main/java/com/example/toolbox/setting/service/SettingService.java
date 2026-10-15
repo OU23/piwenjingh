@@ -22,6 +22,13 @@ public class SettingService {
     /** 单文件上限默认值：10 GB（契约 §13.5） */
     public static final long DEFAULT_MAX_FILE_SIZE = 10L * 1024 * 1024 * 1024;
 
+    /** 分片大小默认值：20 MB（M-23 / B14） */
+    public static final long DEFAULT_CHUNK_SIZE = 20L * 1024 * 1024;
+    /** 分片大小下限：5 MB */
+    public static final long MIN_CHUNK_SIZE = 5L * 1024 * 1024;
+    /** 分片大小上限：100 MB */
+    public static final long MAX_CHUNK_SIZE = 100L * 1024 * 1024;
+
     private final SettingMapper settingMapper;
 
     /** 读取设置值；不存在返回 null */
@@ -60,6 +67,26 @@ public class SettingService {
         }
     }
 
+    /**
+     * 上传分片大小（字节）—— **分片大小的唯一读取入口**（M-23 / B14）。
+     *
+     * <p>`local` 模式：前端据此切片；`oss` 直传模式：即 OSS part 大小（并经 `credentials` 回显）。
+     * 未配置 / 值非法 / 越界（不在 {@link #MIN_CHUNK_SIZE} ~ {@link #MAX_CHUNK_SIZE}）一律回落
+     * 默认 20 MB —— 与 {@link #getMaxFileSize()} 同款容错，保证上传链路不因设置缺失或写坏而不可用。
+     */
+    public long getChunkSize() {
+        String raw = getValue(SettingKey.CHUNK_SIZE);
+        if (raw == null || raw.isBlank()) {
+            return DEFAULT_CHUNK_SIZE;
+        }
+        try {
+            long v = Long.parseLong(raw.trim());
+            return (v >= MIN_CHUNK_SIZE && v <= MAX_CHUNK_SIZE) ? v : DEFAULT_CHUNK_SIZE;
+        } catch (NumberFormatException e) {
+            return DEFAULT_CHUNK_SIZE;
+        }
+    }
+
     /** 写入（不存在则插入，存在则更新），幂等 */
     @Transactional
     public void putValue(String key, String value) {
@@ -71,6 +98,7 @@ public class SettingService {
     public void initDefaults(String storageRoot) {
         upsert(SettingKey.STORAGE_ROOT, storageRoot);
         upsert(SettingKey.MAX_FILE_SIZE, String.valueOf(DEFAULT_MAX_FILE_SIZE));
+        upsert(SettingKey.CHUNK_SIZE, String.valueOf(DEFAULT_CHUNK_SIZE));
     }
 
     private void upsert(String key, String value) {

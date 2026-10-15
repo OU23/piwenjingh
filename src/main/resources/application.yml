@@ -51,6 +51,12 @@ toolbox:
     access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
     # 签名 URL 有效期（秒）：须覆盖"大文件下载 + 暂停后续传"，否则暂停久了会续不上
     url-ttl-seconds: ${OSS_URL_TTL_SECONDS:3600}
+    # ---- 直传临时凭证（M-23 / B14）----
+    # ⚠️ storage.type=oss 时 sts-role-arn 必填，否则启动即失败；type=local 时不校验。
+    sts-role-arn: ${OSS_STS_ROLE_ARN:}
+    # 临时凭证有效期（秒），区间 900 ~ 43200；越界按默认 3600 处理
+    sts-duration-seconds: ${OSS_STS_DURATION_SECONDS:3600}
+    sts-endpoint: ${OSS_STS_ENDPOINT:sts.aliyuncs.com}
 
   security:
     public-paths:

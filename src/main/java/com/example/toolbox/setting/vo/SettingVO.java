@@ -19,4 +19,7 @@ public class SettingVO {
 
     /** 单文件大小上限（字节） */
     private Long maxFileSize;
+
+    /** 上传分片大小（字节，M-23 / B14）；默认 20 MB。**不含敏感信息**，与 maxFileSize 同款：登录即可读 */
+    private Long chunkSize;
 }

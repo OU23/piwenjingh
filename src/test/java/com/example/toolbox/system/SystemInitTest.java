@@ -82,10 +82,12 @@ class SystemInitTest extends IntegrationTestBase {
         long tagCount = tagMapper.selectCount(null);
         assertTrue(tagCount >= 5, "基础标签应写入（建议 5-8 个），实际 " + tagCount);
 
-        // ⑤ 默认全局设置：存储根路径 + 单文件上限
-        assertEquals(2, settingMapper.selectCount(null), "应写入 2 条默认全局设置");
+        // ⑤ 默认全局设置：存储根路径 + 单文件上限 + 分片大小（v1.20 / M-23 新增 chunkSize）
+        //    ※ 计数随实现同步（2 → 3），断言口径未放宽
+        assertEquals(3, settingMapper.selectCount(null), "应写入 3 条默认全局设置");
         assertNotNull(settingValue(SettingKey.STORAGE_ROOT), "应写入存储根路径");
         assertNotNull(settingValue(SettingKey.MAX_FILE_SIZE), "应写入单文件大小上限");
+        assertNotNull(settingValue(SettingKey.CHUNK_SIZE), "应写入分片大小");
 
         // ⑥ 可用新管理员账号登录
         LoginVO login = authService.login("admin", "admin123456", false);

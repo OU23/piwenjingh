@@ -1,6 +1,6 @@
 # db/ · 数据库脚本说明与部署执行清单
 
-> **位置**：`backend/src/main/resources/db/`（2026-09-29 由 `backend/sql/` 迁移至此，文件名同步规范化）。
+> **位置**：`toolbox-backend/docs/db/`（`backend/sql/` → `src/main/resources/db/` → 现 `docs/db/`，2026-09-29 起文件名同步规范化）。
 > **为什么有这份文件**：2026-09-28 联调时因「老库缺 `tb_tool_grant` 表」导致 `GET /api/tools`
 > 与 4 个授权接口**全部 500**。根因是 —— **脚本只由人工执行**，而 `schema.sql` 用的是
 > `CREATE TABLE IF NOT EXISTS`，**已存在的库不会被补建新表**。特此把执行顺序与两种场景写死于此。
@@ -40,9 +40,9 @@
 
 ```bash
 mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS toolbox DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_general_ci;"
-mysql -u root -p toolbox < backend/src/main/resources/db/schema.sql
+mysql -u root -p toolbox < docs/db/schema.sql
 # 可选：仅当你不走「系统初始化」页、想先用 SQL 铺字典时
-mysql -u root -p toolbox < backend/src/main/resources/db/02-seed-base.sql
+mysql -u root -p toolbox < docs/db/02-seed-base.sql
 ```
 
 再启动后端 → 走前端「系统初始化」页（`POST /api/system/init`）创建管理员。
@@ -50,13 +50,19 @@ mysql -u root -p toolbox < backend/src/main/resources/db/02-seed-base.sql
 
 ---
 
-## 三、场景 B：老库升级（库已存在、表数 < 9）
+## 三、场景 B：老库升级（库已存在 —— 可能缺表 / 缺列）
+
+**按编号从小到大**执行（全部幂等，可重复执行；**DDL 即时生效，跑完无需重启后端**）：
 
 ```bash
-mysql -u root -p toolbox < backend/src/main/resources/db/04-add-tool-grant.sql   # ① 必做：补 M-17 新表
-mysql -u root -p toolbox < backend/src/main/resources/db/03-align-schema.sql     # ② 建议：列无默认值 / 无 ON UPDATE 时执行
-mysql -u root -p toolbox < docs/db/05-add-storage-backend.sql                    # ③ 必做（v1.19 / M-22 起）：补新列 storage_backend
+mysql -u root -p toolbox < docs/db/02-seed-base.sql            # 可选：基础标签字典 + 默认设置
+mysql -u root -p toolbox < docs/db/03-align-schema.sql         # 建议：列默认值 / ON UPDATE 对齐（库由旧版脚本建时必跑）
+mysql -u root -p toolbox < docs/db/04-add-tool-grant.sql       # 必做（M-17）：补 tb_tool_grant 表
+mysql -u root -p toolbox < docs/db/05-add-storage-backend.sql  # 必做（M-22）：补 tb_tool_version.storage_backend 列
 ```
+
+⚠️ **症状特征**：**登录与列表正常，但上传 / 下载 / 可见范围等接口 500** —— 基本就是缺了某一期脚本。
+**交付时 `docs/db/` 必须整个目录带上服务器**（只带 `schema.sql` 会导致老库永远升不上去）。
 
 ⚠️ **为什么必须手工执行**：本目录脚本**只由人工执行** —— 后端代码零引用，
 `POST /api/system/init` 也**不会重建 schema**。`schema.sql` 是 `CREATE TABLE IF NOT EXISTS`，
@@ -91,9 +97,11 @@ SELECT column_name, column_default FROM information_schema.columns
 
 | 项 | 说明 |
 | --- | --- |
-| `MYSQL_PASSWORD` | 数据源口令环境变量（`application.yml` 的 `${MYSQL_PASSWORD}`）—— **不设则后端启动失败** |
-| `JWT_SECRET` | 令牌签名密钥，**生产必须覆盖**，否则用的是代码里的开发默认值 |
+| **`--spring.profiles.active=dev`** | **启动参数，必带**。配置已拆 `application.yml`（基础）+ `application-dev.yml` + `application-prod.yml`，而**基础文件不含数据源** —— 不带 profile 会直接启动失败 |
+| `MYSQL_PASSWORD` | 数据源口令环境变量（`application-dev.yml` 的 `${MYSQL_PASSWORD}`）—— **不设则后端启动失败** |
+| `JWT_SECRET` | 令牌签名密钥（`application-dev.yml`），**生产必须覆盖**，否则用的是代码里的开发默认值 |
 | `TOOLBOX_STORAGE_ROOT` | 文件存储根路径；也可由管理员在设置页填写（二选一，不可都空） |
+| ⚠️ 若改用 prod profile | 变量名不同：`SPRING_DATASOURCE_URL` / `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` / `TOOLBOX_JWT_SECRET`（详见《部署配置说明》§6.5） |
 
 ---
 
@@ -106,11 +114,10 @@ SELECT column_name, column_default FROM information_schema.columns
 3. **表总数变化时**，更新本文件 §一 的表清单，并同步 `docs/数据模型.md`。
 4. **交付含 schema 变更的阶段**，必须把「增量脚本路径 + 执行命令」写进该阶段交付报告。
 
-### ⚠️ 不要改路径 / 改名（会改变运行行为）
+### ⚠️ 不要把脚本挪回 `src/main/resources/`（会改变运行行为）
 
-- 脚本**必须留在 `resources/db/` 子目录**：Spring Boot 默认的 DataSource 初始化只扫
-  `classpath*:schema.sql` / `classpath*:data.sql`（**仅类路径根目录，不递归子目录**），
-  因此本目录**不会被自动执行**，脚本仍由**人工执行**（项目既定约定）。
+- 本目录 `docs/db/` **不在 classpath 上**，所以这些脚本**永远不会被 Spring Boot 自动执行** —— 这正是我们
+  要的（项目既定约定：脚本**只由人工执行**）。**别把脚本挪回 `src/main/resources/`。**
 - 一旦把 `schema.sql` 挪到 `src/main/resources/schema.sql`（类路径根），**Spring 会加载它**；
   若再显式设 `spring.sql.init.mode=always`，则每次启动都会执行。
   （另注：Spring Boot 默认 `spring.sql.init.mode=embedded`，对 **MySQL** 这类非内嵌库默认**不执行**，

@@ -2,7 +2,7 @@
 -- tool-box · 种子数据（幂等，可重复执行）
 -- 对应 B4 计划 T3 / 验收 A8：空库按说明初始化后系统即可用、不空跑。
 --
--- 执行顺序：先 01-init-tables.sql 建表，再本脚本。
+-- 执行顺序：先 schema.sql 建表，再本脚本。
 -- 幂等手段：INSERT IGNORE + 表上的唯一键（uk_tag_name / uk_setting_key），
 --           重复执行不会报错、不会产生重复行、不会覆盖管理员后续的修改。
 --
@@ -34,9 +34,12 @@ INSERT IGNORE INTO `tb_tag` (`name`, `create_time`) VALUES
 --    存储根路径的正确来源是：① 配置项 `toolbox.storage.root`（部署期）；
 --    ② 管理员在设置页填写（写入前后端会校验存在性与可写性，不满足 → 2003）；
 --    ③ `POST /api/system/init` 会按"配置项 → 工作目录下 toolbox-files"落一个可用默认值。
+-- 分片大小（M-23 / B14）：字节，默认 20 MB；管理员可在设置页改为 5 ~ 100 MB。
+-- 不种也可 —— `SettingService.getChunkSize()` 缺失时回落同一默认值，本行只是让默认值"显式可见"。
 INSERT IGNORE INTO `tb_setting` (`setting_key`, `setting_value`) VALUES
-  ('maxFileSize', '10737418240');
+  ('maxFileSize', '10737418240'),
+  ('chunkSize', '20971520');
 
--- 校验：下面两条应分别返回 6 行与 1 行
+-- 校验：下面两条应分别返回 6 行与 2 行
 -- SELECT COUNT(*) AS tag_count FROM tb_tag;
 -- SELECT * FROM tb_setting;

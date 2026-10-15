@@ -31,9 +31,43 @@ public class OssProperties {
      */
     private long urlTtlSeconds = 3600;
 
+    // ---- 直传临时凭证（M-23 / B14）----
+
+    /** 要扮演的 RAM 角色 ARN（如 {@code acs:ram::1234567890:role/toolbox-oss-uploader}）；{@code type=oss} 时必填 */
+    private String stsRoleArn = "";
+
+    /**
+     * 临时凭证有效期（秒）。默认 3600；阿里云 AssumeRole 允许区间 <b>900 ~ 43200</b>。
+     * 越界按默认值处理（不抛错），避免一个笔误让直传整体不可用。
+     */
+    private long stsDurationSeconds = DEFAULT_STS_DURATION_SECONDS;
+
+    /** STS 服务 endpoint；一般无需改动 */
+    private String stsEndpoint = "sts.aliyuncs.com";
+
+    /** AssumeRole 默认有效期（秒） */
+    public static final long DEFAULT_STS_DURATION_SECONDS = 3600L;
+    /** AssumeRole 允许的最短有效期（秒），阿里云限制 */
+    public static final long MIN_STS_DURATION_SECONDS = 900L;
+    /** AssumeRole 允许的最长有效期（秒），阿里云限制 */
+    public static final long MAX_STS_DURATION_SECONDS = 43200L;
+
     /** 配置是否完整（四项凭据齐备） */
     public boolean configured() {
         return notBlank(endpoint) && notBlank(bucket) && notBlank(accessKeyId) && notBlank(accessKeySecret);
+    }
+
+    /** 直传所需配置是否齐备（角色 ARN 非空） */
+    public boolean stsConfigured() {
+        return notBlank(stsRoleArn);
+    }
+
+    /** 生效的有效期（越界 / 非法回落默认 3600，与 urlTtl 同款容错） */
+    public long stsDurationSecondsOrDefault() {
+        if (stsDurationSeconds < MIN_STS_DURATION_SECONDS || stsDurationSeconds > MAX_STS_DURATION_SECONDS) {
+            return DEFAULT_STS_DURATION_SECONDS;
+        }
+        return stsDurationSeconds;
     }
 
     /** 签名 URL 有效期（非法值回退 3600 秒） */

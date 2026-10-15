@@ -2,7 +2,7 @@
 -- tool-box · 表结构对齐（幂等，可重复执行）
 --
 -- 【为什么需要这个脚本】
--- `01-init-tables.sql` 用的是 `CREATE TABLE IF NOT EXISTS`：**表已存在时它不会做任何改动**。
+-- `schema.sql`（原 `01-init-tables.sql`）用的是 `CREATE TABLE IF NOT EXISTS`：**表已存在时它不会做任何改动**。
 -- 因此如果库是**更早版本**的脚本建的，后来给列补的 `DEFAULT CURRENT_TIMESTAMP` /
 -- `ON UPDATE CURRENT_TIMESTAMP` **不会自动生效**。
 --

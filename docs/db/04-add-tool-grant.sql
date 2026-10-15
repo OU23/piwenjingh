@@ -3,7 +3,7 @@
 --   （M-17 跨部门工具授权 / 契约 v1.7 / 数据模型 v1.1 §3.9）
 --
 -- 【为什么需要这个脚本】
--- `01-init-tables.sql` 用的建表语句是 `CREATE TABLE IF NOT EXISTS`，**且该脚本只由人工执行**
+-- `schema.sql`（原 `01-init-tables.sql`）用的建表语句是 `CREATE TABLE IF NOT EXISTS`，**且该脚本只由人工执行**
 -- （后端代码里没有任何地方引用它，系统初始化接口也不会重建 schema）。
 -- 因此 —— **已初始化的老库不会自动补建新表**。
 --
