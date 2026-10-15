@@ -10,7 +10,7 @@
 1. **凭据与开关全部走服务器环境变量**，绝不进代码 / 仓库 / 前端 / 数据库。
 2. **“配了 OSS” ≠ “新上传走 OSS”**：前者是 OSS 凭据，后者是 `TOOLBOX_STORAGE_TYPE` 这个全局开关。两者独立。
 3. **“新上传走 OSS” ≠ “上传直传”**：直传（B14）还要在平台建 **RAM 角色 + STS 授权 + Bucket CORS**，少一样都跑不起来。
-4. 环境变量是**启动期绑定**，改完必须 `daemon-reload` + `restart`，不重启不生效。
+4. 环境变量是**启动期绑定**，改完必须**重建容器**才生效——`docker compose restart` **不够**（见 §3）。
 5. 两条上传链路并存：`type=oss` → **浏览器直传**（需 STS）；`type=local` → **经服务器中转**（不需要 STS）。
 
 > **只做下载直链 / 存量迁移（B13）**：做完 §2.1 / §2.2 即可，§2.3 ~ §2.5 可跳过。  
@@ -280,32 +280,34 @@
 
 ## 3. 开关在哪（回答“是不是在部署服务器上”）
 
-是。**全部在部署服务器的 systemd 单元里**，不在代码 / 前端 / 设置页。
+是。**全部在部署服务器的 Docker Compose 配置里**，不在代码 / 前端 / 设置页。
 
-- 单元文件：`/etc/systemd/system/tool-box.service`
-- 现有 `Environment=` 已有：`MYSQL_PASSWORD` / `JWT_SECRET` / `TOOLBOX_STORAGE_ROOT`
+- 配置文件：`toolbox-backend/deploy/docker-compose.yml` → `services.toolbox-backend.environment:`
+- 现有 `environment:` 已有：`SPRING_PROFILES_ACTIVE=prod`、`SPRING_DATASOURCE_*`、`TOOLBOX_JWT_SECRET` 等
 - 启用 OSS 需 **追加** §1 表里的 OSS 相关项（至少 4 个凭据 + `TOOLBOX_STORAGE_TYPE=oss`；要直传再加 `OSS_STS_ROLE_ARN`）
 
-改完必须重载并重启：
+改完**必须重建容器**（`docker compose restart` **不生效**）：
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl restart tool-box
+cd <项目根>/toolbox-backend
+./deploy/scripts/restart.sh     # = stop + build-up（--build + up -d）
 ```
+
+> 📄 逐项怎么加、可照抄的完整 `environment:` 片段、验证与坑位：见 **`OSS-服务器部署配置说明.md`**。
 
 ---
 
 ## 4. 服务器侧完整启用步骤
 
 1. **平台侧**：按 §2 完成 Bucket / RAM 用户 / 角色 / CORS / 生命周期。
-2. **加环境变量**：把 §2.6 的项写进 systemd 单元的 `Environment=`。
-3. **重载 + 重启**（见 §3）。⚠️ 若 `TOOLBOX_STORAGE_TYPE=oss` 而 `OSS_STS_ROLE_ARN` 为空 → **后端启动即失败**（这是防"带病启动"的预期行为，不是 bug）。
+2. **加环境变量**：把 §2.6 的项写进 `deploy/docker-compose.yml` 的 `environment:`（逐项操作见 `OSS-服务器部署配置说明.md`）。
+3. **重建容器**（见 §3）。⚠️ 若 `TOOLBOX_STORAGE_TYPE=oss` 而 `OSS_STS_ROLE_ARN` 为空 → **后端启动即失败**（这是防"带病启动"的预期行为，不是 bug）。
 4. **校验 DB 列**：确认 `tb_tool_version` 有 `storage_backend` 列。
    - 用全量 `docs/db/schema.sql` 建的新库已含该列；
    - 若是 B13 之前建的老库，需补跑增量：`mysql -u root -p toolbox < docs/db/05-add-storage-backend.sql`（幂等，可重复跑）。
 5. **验证直传开关生效**（前端上传页会自动按模式分流）：
    - 浏览器打开 `GET /api/upload/mode`（带登录令牌），应返回 `"mode":"direct"` 与 `"partSize":20971520`；
-   - 若返回 `"mode":"server"`，说明 `TOOLBOX_STORAGE_TYPE` 没生效（多半忘了重启）。
+   - 若返回 `"mode":"server"`，说明 `TOOLBOX_STORAGE_TYPE` 没生效（多半忘了重建容器）。
 6. **迁移存量**（可选但推荐）：调用 `POST /api/tools/migrate-to-oss`（或前端设置页「开始迁移」）。
    - 可重复执行，已迁移的自动跳过；单文件失败不影响其他；**成功即删本地副本**，真正释放磁盘。
 7. **验证**：上传一个新文件 → 查该版本 `storage_backend = 'oss'`；下载应走签名直链（浏览器直接访问、不再经后端代理）。老文件迁移后同样如此。
@@ -458,8 +460,8 @@ mvn spring-boot:run "-Dspring-boot.run.profiles=dev"   # ⚠️ PowerShell 下�
   → `OSS_STS_DURATION_SECONDS` **不能大于**角色的「最大会话时间」（默认 3600），否则 `AssumeRole` 失败、直传报「对象存储暂不可用」。
 - ❌ **“迁移完了把存储根路径删了省事”**  
   → 错。本地存储后端仍常驻：万一有 `local` 落点文件（迁移漏网）或以后切回 `local`，路径错位即 404。OSS 时代它进入“**休眠但保留**”状态，不要删。
-- ⚠️ **“改了环境变量不重启应该生效吧”**  
-  → 不生效。环境变量是启动期绑定，必须 `restart tool-box`。
+- ⚠️ **“改了环境变量重启一下就行吧”**  
+  → `docker compose restart` **不生效**。环境变量在容器**创建时**注入，必须**重建**：`./deploy/scripts/restart.sh`。
 - ⚠️ **“生命周期设了，中断的分片应该马上被清”**  
   → 不会。规则创建后需 **24 小时内加载**，之后按固定周期（北京时 8 点后）扫描。
 
@@ -467,7 +469,7 @@ mvn spring-boot:run "-Dspring-boot.run.profiles=dev"   # ⚠️ PowerShell 下�
 
 ## 6. 回退
 
-- 把 `TOOLBOX_STORAGE_TYPE` 改回 `local` 并重启 → **新上传**回到本地路径（原「检查 → 传分片 → 合并」链路，不依赖 STS）。
+- 把 `TOOLBOX_STORAGE_TYPE` 改回 `local` 并**重建容器** → **新上传**回到本地路径（原「检查 → 传分片 → 合并」链路，不依赖 STS）。
 - 已迁到 OSS 的文件落点仍是 `oss`，其下载继续走 OSS（无需迁回，也不受影响）。
 - 若要彻底把 OSS 上的文件迁回本地，需另写反向迁移任务，本期（B13 / B14）**未实现**。
 
@@ -475,7 +477,8 @@ mvn spring-boot:run "-Dspring-boot.run.profiles=dev"   # ⚠️ PowerShell 下�
 
 ## 7. 与其他文档的关系
 
-- 部署总流程 / systemd 单元写法：见 `tool-box-bak/docs/部署配置说明.md`（本文是其 OSS 专项补充，建议互相交叉引用）。
+- 部署总流程 / 容器编排：见 `toolbox-backend/deploy/README.md`（本文是其 OSS 专项补充）。
+- **服务器部署 OSS 逐项操作（Docker）**：见 `OSS-服务器部署配置说明.md`（本文 §3 / §4 的展开版，含可照抄的 `environment:` 片段与坑位）。
 - 数据库增量脚本：见 `toolbox-backend/docs/db/`（`05-add-storage-backend.sql` 等）。
 - 代码层设计 / 接口定义 / 部署前置清单：见 `tool-box-bak/docs/` 下
   `OSS对接（需求与实现方案）.md`（B13）、`OSS直传（需求与实现方案）.md`（B14，§5.7 为平台侧清单原文）、
