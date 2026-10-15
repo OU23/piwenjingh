@@ -25,7 +25,7 @@ const items = computed<{ label: string; value: string }[]>(() => [
   { label: '归属部门', value: props.detail.deptName || '—' },
   { label: '上传时间', value: formatDateTime(props.detail.createTime) },
   { label: '最近更新', value: formatDateTime(props.detail.updateTime) },
-  { label: '下载次数', value: String(props.detail.downloadCount ?? 0) },
+  // M-23：不再展示「下载次数」（该字段实为签发次数，非下载成功次数，见方案 §2.7）
   { label: '依赖说明', value: fallback(props.detail.dependency) },
 ]);
 </script>

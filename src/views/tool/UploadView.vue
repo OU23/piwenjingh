@@ -5,42 +5,31 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import ToolMetaForm from '@/components/ToolMetaForm.vue';
 import UploadFilePicker from '@/components/UploadFilePicker.vue';
 import UploadProgressPanel from '@/components/UploadProgressPanel.vue';
-import {
-  ChunkUploadTask,
-  UploadCanceledError,
-  createFileIdentifier,
-  type UploadProgress,
-  type UploadResult,
-} from '@/api/chunkUpload';
+import { UploadCanceledError, createFileIdentifier, type UploadProgress, type UploadResult, type UploadTask } from '@/api/chunkUpload';
 import type { TagVO } from '@/api/tag';
 import { submitTool } from '@/api/toolSubmit';
 import type { ID } from '@/api/types';
 import { loadUploadContext } from '@/api/uploadContext';
+import type { UploadMode } from '@/api/uploadMode';
+import { createUploadTask } from '@/api/uploadTask';
 import { useUploadDraftStore, type PendingUpload } from '@/stores/uploadDraft';
+import { formatFileSize } from '@/utils/format';
 import { fileExtFromName, type ToolMetaMode, type ToolMetaValues } from '@/utils/toolMetaValidation';
+import { STEPS, emptyProgress, type StepName } from './uploadSteps';
 
 /**
  * 上传工具：选择文件 → 上传 → 填写信息 → 完成（P3 计划 T1–T8）
  * 两种入口：新建（列表页进入）/ 追加版本（详情页带 toolId 进入）。
  * 唯一分片链路，小文件同样走分片（见 docs/内部-前端蓝图对照.md §四）。
  */
-type StepName = 'pick' | 'upload' | 'meta' | 'done';
-
-const STEPS: { key: StepName; title: string }[] = [
-  { key: 'pick', title: '选择文件' },
-  { key: 'upload', title: '上传' },
-  { key: 'meta', title: '填写信息' },
-  { key: 'done', title: '完成' },
-];
-
-function emptyProgress(totalBytes = 0): UploadProgress {
-  return { uploadedBytes: 0, totalBytes, uploadedChunks: 0, totalChunks: 0, speed: null, remainingMs: null };
-}
-
 const route = useRoute();
 const router = useRouter();
 
 const step = ref<StepName>('pick');
+/** 上传通道（M-23）：由 /api/upload/mode 决定，读取失败时兜底 server（经服务器中转始终可用） */
+const uploadMode = ref<UploadMode>('server');
+/** 生效分片大小（字节）：唯一来源是后端 mode.partSize（全局设置 chunkSize） */
+const partSize = ref(0);
 const maxSize = ref(0);
 const maxSizeError = ref('');
 const pickError = ref('');
@@ -68,7 +57,7 @@ const toolId = ref<ID | undefined>(readToolId());
 const mode = computed<ToolMetaMode>(() => (toolId.value ? 'version' : 'create'));
 const activeIndex = computed(() => STEPS.findIndex((item) => item.key === step.value));
 
-let task: ChunkUploadTask | null = null;
+let task: UploadTask | null = null;
 
 /** 上次写入"未完成上传"记录时的分片数：用于避免同一进度重复写 sessionStorage */
 let pendingSavedChunks = -1;
@@ -114,18 +103,20 @@ async function startUpload(selected: File): Promise<void> {
   // 标识需读文件头/中/尾采样，异步算好后传入（补充说明 N-05）
   const identifier = await createFileIdentifier(selected);
 
-  const running = new ChunkUploadTask({
+  const running = await createUploadTask({
+    mode: uploadMode.value,
     file: selected,
     identifier,
+    partSize: partSize.value,
     onProgress: (next) => {
       progress.value = next;
-      // 分片传完 → 进入服务端合并阶段
+      // 分片传完 → 进入服务端合并（直传则为 OSS 合并 + 完成登记）
       merging.value = next.totalChunks > 0 && next.uploadedChunks >= next.totalChunks;
       // 记录进度：刷新后可提示"重新选择同一文件从断点继续"
       persistPendingProgress(selected.name, next);
     },
     onChecked: (uploadedChunks) => {
-      resumedFrom.value = uploadedChunks.length;
+      resumedFrom.value = uploadedChunks;
     },
   });
   task = running;
@@ -339,6 +330,8 @@ onMounted(async () => {
 
   try {
     const context = await loadUploadContext(toolId.value);
+    uploadMode.value = context.mode === 'direct' ? 'direct' : 'server';
+    partSize.value = context.partSize;
     maxSize.value = context.maxFileSize;
     maxSizeError.value = context.maxFileSizeError;
     tags.value = context.tags;
@@ -389,6 +382,11 @@ onBeforeUnmount(() => {
       <div v-if="step === 'pick' && pendingUploadHint" class="tb-note is-info tb-upload__pending">
         上次上传「{{ pendingUploadHint.fileName }}」未完成（已传 {{ pendingUploadHint.uploadedChunks }} /
         {{ pendingUploadHint.totalChunks }} 片）。重新选择<strong>同一个文件</strong>即可从断点继续，已传部分不会重传。
+      </div>
+
+      <div v-if="step === 'pick' && partSize > 0" class="tb-upload__part-size">
+        分片大小 {{ formatFileSize(partSize) }}（{{ uploadMode === 'direct' ? '浏览器直传对象存储' : '经服务器上传' }}）；
+        由管理员在「全局设置」中统一配置。
       </div>
 
       <UploadFilePicker
@@ -457,6 +455,12 @@ onBeforeUnmount(() => {
 
 .tb-upload__pending {
   margin-bottom: var(--tb-gap);
+}
+
+.tb-upload__part-size {
+  margin-bottom: var(--tb-gap);
+  font-size: var(--tb-font-xs);
+  color: var(--tb-text-3);
 }
 
 .tb-upload__done {

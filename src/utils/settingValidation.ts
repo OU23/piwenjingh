@@ -10,9 +10,17 @@ import type { SettingSaveDTO, SettingVO } from '@/api/setting';
  */
 
 export const BYTES_PER_GB = 1024 ** 3;
+export const BYTES_PER_MB = 1024 ** 2;
 
 /** 单文件上限的允许范围（GB）：下限 1 GB，上限 1024 GB（1 TB） */
 export const FILE_SIZE_LIMIT_GB = { min: 1, max: 1024 } as const;
+
+/**
+ * 分片大小的允许范围（MB，契约 v1.20 §十）：5 ~ 100 MB。
+ * ⚠️ 与后端 `SettingService.MIN_CHUNK_SIZE / MAX_CHUNK_SIZE` 保持一致；
+ * 后端才是权威（越界 → 1003），此处仅用于即时提示。
+ */
+export const CHUNK_SIZE_MB = { min: 5, max: 100 } as const;
 
 /** 路径归一化：去首尾空格 + 反斜杠转正斜杠（契约 §十 v1.5：统一用 `/`） */
 export function normalizeStorageRoot(path: string): string {
@@ -23,14 +31,20 @@ export interface SettingFormValues {
   storageRoot: string;
   /** 界面填写值，单位 GB */
   maxFileSizeGb: number;
+  /**
+   * 分片大小（界面填写值，单位 MB）。
+   * **选填**：未提供视为"不修改该项"（与 DTO 的"选填、传了才改"语义一致）。
+   */
+  chunkSizeMb?: number;
 }
 
-/** 当前设置 → 表单值（字节换算为 GB，保留一位小数；路径归一化为 `/`） */
+/** 当前设置 → 表单值（字节换算为 GB / MB；路径归一化为 `/`） */
 export function toSettingFormValues(settings: SettingVO): SettingFormValues {
   return {
     // 无 sys:setting 权限时后端返回 null（补充说明 N-03）：此处退化为空串，由界面提示无权查看
     storageRoot: settings.storageRoot === null ? '' : normalizeStorageRoot(settings.storageRoot),
     maxFileSizeGb: Math.round((settings.maxFileSize / BYTES_PER_GB) * 10) / 10,
+    chunkSizeMb: Math.round(settings.chunkSize / BYTES_PER_MB),
   };
 }
 
@@ -56,6 +70,14 @@ export function validateSettingForm(values: SettingFormValues): string {
   if (values.maxFileSizeGb > FILE_SIZE_LIMIT_GB.max) {
     return `单文件上限不能大于 ${FILE_SIZE_LIMIT_GB.max} GB`;
   }
+  if (values.chunkSizeMb !== undefined) {
+    if (!Number.isFinite(values.chunkSizeMb) || values.chunkSizeMb < CHUNK_SIZE_MB.min) {
+      return `分片大小不能小于 ${CHUNK_SIZE_MB.min} MB`;
+    }
+    if (values.chunkSizeMb > CHUNK_SIZE_MB.max) {
+      return `分片大小不能大于 ${CHUNK_SIZE_MB.max} MB`;
+    }
+  }
   return '';
 }
 
@@ -74,18 +96,25 @@ export function buildSettingSaveDTO(current: SettingVO, next: SettingFormValues)
     dto.maxFileSize = bytes;
   }
 
+  if (next.chunkSizeMb !== undefined) {
+    const chunkBytes = Math.round(next.chunkSizeMb * BYTES_PER_MB);
+    if (chunkBytes > 0 && chunkBytes !== current.chunkSize) {
+      dto.chunkSize = chunkBytes;
+    }
+  }
+
   return dto;
 }
 
 /** 是否有实际改动（无改动不应发起请求） */
 export function hasSettingChanges(dto: SettingSaveDTO): boolean {
-  return dto.storageRoot !== undefined || dto.maxFileSize !== undefined;
+  return dto.storageRoot !== undefined || dto.maxFileSize !== undefined || dto.chunkSize !== undefined;
 }
 
 /** 保存确认文案（必须含"不会自动迁移"） */
 export function settingConfirmMessage(hasRootChange: boolean): string {
   if (!hasRootChange) {
-    return '确定保存全局设置吗？新的单文件上限将用于之后的上传校验。';
+    return '确定保存全局设置吗？新的单文件上限与分片大小将用于之后的上传（进行中的上传不受影响）。';
   }
   return '确定修改存储根路径吗？⚠️ 变更前已上传的文件不会自动迁移，需要人工把旧目录下的文件拷贝到新目录，否则这些工具将无法下载。';
 }

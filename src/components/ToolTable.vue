@@ -83,7 +83,7 @@ function suggestedName(row: ToolVO): string {
     <el-table-column label="大小" width="100">
       <template #default="{ row }">{{ formatFileSize(row.fileSize) }}</template>
     </el-table-column>
-    <el-table-column prop="downloadCount" label="下载次数" width="100" />
+    <!-- M-23：不再展示「下载次数」（该字段实为签发次数，非下载成功次数，见方案 §2.7） -->
     <el-table-column label="更新时间" width="170">
       <template #default="{ row }">{{ formatDateTime(row.updateTime) }}</template>
     </el-table-column>

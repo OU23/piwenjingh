@@ -83,10 +83,11 @@ describe('工具列表查询参数拼装', () => {
     expect(hasActiveFilters(filtersOf({ scope: 'DEPT' }))).toBe(true);
   });
 
+  // M-23：`downloadCount` 排序项已移除（该字段实为签发次数，前端不再展示），改用 `name` 覆盖"可切换"
   it('排序条件可切换', () => {
-    const query = buildToolListQuery(filtersOf({ sortBy: SORT_BY.DOWNLOAD_COUNT, sortOrder: SORT_ORDER.ASC }), 1, 20);
+    const query = buildToolListQuery(filtersOf({ sortBy: SORT_BY.NAME, sortOrder: SORT_ORDER.ASC }), 1, 20);
 
-    expect(query.sortBy).toBe('downloadCount');
+    expect(query.sortBy).toBe('name');
     expect(query.sortOrder).toBe('asc');
   });
 });

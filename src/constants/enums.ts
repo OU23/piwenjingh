@@ -25,10 +25,14 @@ export const STATUS_LABEL: Record<number, string> = {
   0: '停用',
 };
 
-/** 排序字段（契约 §13.4） */
+/**
+ * 排序字段（契约 §13.4）。
+ *
+ * ⚠️ M-23 起**移除 `downloadCount`**：该字段实为"签发次数"而非"下载成功次数"（方案 §2.7），
+ * 前端已不再展示它 —— 保留排序项会造成"能排序但看不到"的困惑。后端仍接受该参数，仅界面不再提供。
+ */
 export const SORT_BY = {
   CREATE_TIME: 'createTime',
-  DOWNLOAD_COUNT: 'downloadCount',
   NAME: 'name',
 } as const;
 
@@ -36,7 +40,6 @@ export type SortByValue = (typeof SORT_BY)[keyof typeof SORT_BY];
 
 export const SORT_BY_LABEL: Record<SortByValue, string> = {
   createTime: '上传时间',
-  downloadCount: '下载次数',
   name: '名称',
 };
 

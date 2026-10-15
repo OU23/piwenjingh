@@ -8,6 +8,8 @@ import { PERMISSION } from '@/constants/permissions';
 import { useUserStore } from '@/stores/user';
 import { formatFileSize } from '@/utils/format';
 import {
+  BYTES_PER_MB,
+  CHUNK_SIZE_MB,
   FILE_SIZE_LIMIT_GB,
   buildSettingSaveDTO,
   hasSettingChanges,
@@ -26,7 +28,11 @@ import {
 const userStore = useUserStore();
 
 const current = ref<SettingVO | null>(null);
-const form = reactive<SettingFormValues>({ storageRoot: '', maxFileSizeGb: 0 });
+const form = reactive<SettingFormValues>({
+  storageRoot: '',
+  maxFileSizeGb: 0,
+  chunkSizeMb: CHUNK_SIZE_MB.min,
+});
 const loading = ref(false);
 const error = ref<string | null>(null);
 const saving = ref(false);
@@ -36,6 +42,9 @@ const saveError = ref('');
 const canSave = computed(() => userStore.has(PERMISSION.SYS_SETTING));
 const currentLimitText = computed(() =>
   current.value ? `当前生效：${formatFileSize(current.value.maxFileSize)}` : '正在读取当前设置…',
+);
+const currentChunkText = computed(() =>
+  current.value ? `${Math.round(current.value.chunkSize / BYTES_PER_MB)} MB` : '正在读取…',
 );
 
 async function fetchSettings(): Promise<void> {
@@ -131,6 +140,23 @@ onMounted(() => {
             :precision="1"
           />
           <span class="tb-muted">默认 10 GB；{{ currentLimitText }}。修改后仅对之后的上传生效。</span>
+        </div>
+
+        <div class="tb-setting__item">
+          <label class="tb-setting__label" for="setting-chunk">上传分片大小（MB）</label>
+          <el-input-number
+            id="setting-chunk"
+            v-model="form.chunkSizeMb"
+            :min="CHUNK_SIZE_MB.min"
+            :max="CHUNK_SIZE_MB.max"
+            :step="1"
+            :precision="0"
+          />
+          <span class="tb-muted">
+            默认 20 MB，可设 {{ CHUNK_SIZE_MB.min }} ~ {{ CHUNK_SIZE_MB.max }} MB；当前生效：{{
+              currentChunkText
+            }}。修改后仅对之后的上传生效（进行中的上传不受影响）。
+          </span>
         </div>
 
         <div class="tb-note tb-setting__warning">

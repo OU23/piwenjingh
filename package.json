@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "2.3.1",
+    "ali-oss": "6.23.0",
     "axios": "1.7.2",
     "element-plus": "2.7.6",
     "pinia": "2.1.7",
@@ -26,6 +27,7 @@
     "vue-router": "4.3.2"
   },
   "devDependencies": {
+    "@types/ali-oss": "6.23.3",
     "@types/node": "20.14.9",
     "@typescript-eslint/eslint-plugin": "7.13.1",
     "@typescript-eslint/parser": "7.13.1",

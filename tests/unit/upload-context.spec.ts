@@ -14,11 +14,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
+  getUploadMode: vi.fn(),
   listTags: vi.fn(),
   getToolDetail: vi.fn(),
 }));
 
 vi.mock('@/api/setting', () => ({ getSettings: mocks.getSettings }));
+// v1.20 新增依赖（M-23）：上传页需先查上传模式 —— 夹具补齐，未改动任何断言
+vi.mock('@/api/uploadMode', () => ({ getUploadMode: mocks.getUploadMode }));
 vi.mock('@/api/tag', () => ({ listTags: mocks.listTags }));
 vi.mock('@/api/tool', () => ({ getToolDetail: mocks.getToolDetail }));
 
@@ -28,7 +31,18 @@ const TAG = { id: '1', name: '数据处理', toolCount: 3, createTime: '2026-09-
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.getSettings.mockResolvedValue({ storageRoot: '/data/toolbox/files', maxFileSize: 10737418240 });
+  mocks.getSettings.mockResolvedValue({
+    storageRoot: '/data/toolbox/files',
+    maxFileSize: 10737418240,
+    chunkSize: 20971520,
+  });
+  mocks.getUploadMode.mockResolvedValue({
+    mode: 'server',
+    partSize: 20971520,
+    partSizeMin: 5242880,
+    partSizeMax: 104857600,
+    maxFileSize: 10737418240,
+  });
   mocks.listTags.mockResolvedValue([TAG]);
   mocks.getToolDetail.mockResolvedValue(null);
 });

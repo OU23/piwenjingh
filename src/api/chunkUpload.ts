@@ -12,10 +12,12 @@ import { cancelUpload, checkUpload, mergeUpload, uploadChunk } from './upload';
  * 暂停语义：`pause()` **中止全部在途分片**（点即停），被中止的片无损回到队首、恢复后重传。
  */
 
-/** 分片大小：5 MB（契约 §8.3 建议值；如需调整须与后端对齐后同步契约） */
-export const CHUNK_SIZE = 5 * 1024 * 1024;
-
-/** 分片并发数（固定常量，不写裸数字） */
+/**
+ * 分片并发数（固定常量，不写裸数字）。
+ *
+ * ⚠️ 分片大小**前端不再有默认值 / 常量**：唯一来源是后端 `/api/upload/mode` 的 `partSize`
+ * （即全局设置 `chunkSize`，默认 20 MB）—— 避免"设置页一个值、上传时另一个值"（M-23 方案 §5.6）。
+ */
 export const MAX_CONCURRENT_CHUNKS = 3;
 
 /** 单个分片的最大重试次数（首次之外） */
@@ -41,6 +43,21 @@ export interface UploadResult {
   fileSize: number;
 }
 
+/**
+ * 上传任务的统一接口（M-23）：`ChunkUploadTask`（经服务器）与 `DirectUploadTask`（直传 OSS）
+ * 对外**同形** —— 上传页按 `mode` 二选一后，其余交互（进度 / 暂停 / 继续 / 取消）完全一致。
+ */
+export interface UploadTask {
+  readonly identifier: string;
+  readonly totalChunks: number;
+  run(): Promise<UploadResult>;
+  pause(): void;
+  resume(): void;
+  isPaused(): boolean;
+  stop(): void;
+  cancel(): Promise<void>;
+}
+
 /** 用户主动取消（区别于失败：调用方不应提示"重试"） */
 export class UploadCanceledError extends Error {
   constructor() {
@@ -49,8 +66,8 @@ export class UploadCanceledError extends Error {
   }
 }
 
-/** 总片数 = 向上取整（契约 §8.3） */
-export function computeTotalChunks(fileSize: number, chunkSize: number = CHUNK_SIZE): number {
+/** 总片数 = 向上取整（契约 §8.3）；`chunkSize` 由调用方传入（取自后端 partSize） */
+export function computeTotalChunks(fileSize: number, chunkSize: number): number {
   if (fileSize <= 0 || chunkSize <= 0) {
     return 0;
   }
@@ -58,7 +75,7 @@ export function computeTotalChunks(fileSize: number, chunkSize: number = CHUNK_S
 }
 
 /** 取第 chunkNumber 片（序号从 1 开始）；只切该片，不读整文件 */
-export function sliceChunk(file: Blob, chunkNumber: number, chunkSize: number = CHUNK_SIZE): Blob {
+export function sliceChunk(file: Blob, chunkNumber: number, chunkSize: number): Blob {
   const start = (chunkNumber - 1) * chunkSize;
   return file.slice(start, start + chunkSize);
 }
@@ -163,10 +180,11 @@ export interface ChunkUploadTaskOptions {
   onProgress?: (progress: UploadProgress) => void;
   /** 检查完成回调：用于界面提示"已从断点继续" */
   onChecked?: (uploadedChunks: number[]) => void;
-  chunkSize?: number;
+  /** 分片大小（字节）；**必填** —— 唯一来源是后端 `/api/upload/mode` 的 `partSize` */
+  chunkSize: number;
 }
 
-export class ChunkUploadTask {
+export class ChunkUploadTask implements UploadTask {
   readonly identifier: string;
   readonly totalChunks: number;
 
@@ -191,7 +209,7 @@ export class ChunkUploadTask {
 
   constructor(options: ChunkUploadTaskOptions) {
     this.file = options.file;
-    this.chunkSize = options.chunkSize ?? CHUNK_SIZE;
+    this.chunkSize = options.chunkSize;
     this.onProgress = options.onProgress;
     this.onChecked = options.onChecked;
     this.identifier = options.identifier;

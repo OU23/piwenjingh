@@ -23,15 +23,20 @@ import {
   validateSettingForm,
 } from '@/utils/settingValidation';
 
+// 夹具对齐（v1.20 新增 chunkSize 字段）：仅补字段，未改动任何断言
 const CURRENT: SettingVO = {
   storageRoot: '/data/toolbox/files',
   maxFileSize: 10 * BYTES_PER_GB,
+  chunkSize: 20 * 1024 ** 2,
 };
 
 describe('设置表单取值', () => {
   it('字节换算为 GB（保留一位小数）', () => {
     expect(toSettingFormValues(CURRENT).maxFileSizeGb).toBe(10);
-    expect(toSettingFormValues({ storageRoot: '/a', maxFileSize: 1.5 * BYTES_PER_GB }).maxFileSizeGb).toBe(1.5);
+    expect(
+      toSettingFormValues({ storageRoot: '/a', maxFileSize: 1.5 * BYTES_PER_GB, chunkSize: 20 * 1024 ** 2 })
+        .maxFileSizeGb,
+    ).toBe(1.5);
   });
 
   it('绝对路径判定', () => {

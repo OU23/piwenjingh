@@ -39,9 +39,9 @@ watch(
   { deep: true },
 );
 
+// M-23：移除「下载次数」排序项（该字段实为签发次数，前端已不展示，保留排序会造成困惑）
 const sortByOptions: { value: string; label: string }[] = [
   { value: SORT_BY.CREATE_TIME, label: SORT_BY_LABEL[SORT_BY.CREATE_TIME] },
-  { value: SORT_BY.DOWNLOAD_COUNT, label: SORT_BY_LABEL[SORT_BY.DOWNLOAD_COUNT] },
   { value: SORT_BY.NAME, label: SORT_BY_LABEL[SORT_BY.NAME] },
 ];
 

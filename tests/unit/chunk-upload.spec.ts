@@ -15,7 +15,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AxiosAdapter, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import { http } from '@/api/request';
 import {
-  CHUNK_SIZE,
   ChunkUploadTask,
   SAMPLE_SEGMENT_SIZE,
   UploadCanceledError,
@@ -88,7 +87,7 @@ describe('分片计算与切片', () => {
     expect(computeTotalChunks(10, 4)).toBe(3);
     expect(computeTotalChunks(8, 4)).toBe(2);
     expect(computeTotalChunks(4, 4)).toBe(1);
-    expect(computeTotalChunks(0)).toBe(0);
+    expect(computeTotalChunks(0, 4)).toBe(0);
   });
 
   it('切片按序号取，最后一片不足时取剩余（不读整文件）', () => {
@@ -210,7 +209,12 @@ describe('分片上传调度', () => {
     await expect(task.run()).rejects.toBeInstanceOf(UploadCanceledError);
   });
 
-  it('默认分片大小为 5 MB', () => {
-    expect(CHUNK_SIZE).toBe(5 * 1024 * 1024);
+  /**
+   * M-23 起**前端不再有默认分片大小**：唯一来源是后端 `/api/upload/mode` 的 `partSize`
+   * （全局设置 `chunkSize`）。此处锁死"片数随传入的分片大小变化"这一新口径。
+   */
+  it('分片大小由调用方传入（不再有前端默认常量）', () => {
+    expect(computeTotalChunks(10 * 1024 * 1024, 5 * 1024 * 1024)).toBe(2);
+    expect(computeTotalChunks(10 * 1024 * 1024, 20 * 1024 * 1024)).toBe(1);
   });
 });

@@ -1,11 +1,14 @@
 import { getSettings } from './setting';
+import { getUploadMode, type UploadMode } from './uploadMode';
 import { listTags, type TagVO } from './tag';
 import { getToolDetail } from './tool';
 import type { ID } from './types';
 
 /**
- * 上传页的上下文数据（单文件上限 / 标签字典 / 追加版本时的目标工具）
+ * 上传页的上下文数据（上传模式 / 分片大小 / 单文件上限 / 标签字典 / 追加版本时的目标工具）
  * 集中在一处加载：任一项失败都不阻断其余项（上限读不到时页面提示，标签为空即可）。
+ *
+ * ⚠️ `mode` 读取失败时**兜底 `server`**（经服务器中转链路始终可用），不阻断上传主流程。
  */
 
 export interface UploadTargetTool {
@@ -20,6 +23,10 @@ export interface UploadTargetTool {
 }
 
 export interface UploadContext {
+  /** 上传通道（分流依据，契约 v1.20 §8.5）；读取失败时兜底 `server` */
+  mode: UploadMode;
+  /** 生效分片大小（字节，`local` 模式即切片大小）；无法获取时为 0 */
+  partSize: number;
   /** 单文件上限（字节）；0 表示未能读取 */
   maxFileSize: number;
   tags: TagVO[];
@@ -31,13 +38,24 @@ export interface UploadContext {
 }
 
 export async function loadUploadContext(toolId?: ID): Promise<UploadContext> {
-  const [settingsResult, tagsResult, toolResult] = await Promise.allSettled([
+  const [settingsResult, modeResult, tagsResult, toolResult] = await Promise.allSettled([
     getSettings(),
+    getUploadMode(),
     listTags(),
     toolId ? getToolDetail(toolId) : Promise.resolve(null),
   ]);
 
+  // 分片大小：优先取 mode 的权威值；mode 失败时退回设置里的 chunkSize（同源，二者都由后端下发）
+  const partSize =
+    modeResult.status === 'fulfilled'
+      ? modeResult.value.partSize
+      : settingsResult.status === 'fulfilled'
+        ? (settingsResult.value.chunkSize ?? 0)
+        : 0;
+
   return {
+    mode: modeResult.status === 'fulfilled' ? modeResult.value.mode : 'server',
+    partSize,
     maxFileSize: settingsResult.status === 'fulfilled' ? settingsResult.value.maxFileSize : 0,
     maxFileSizeError:
       settingsResult.status === 'rejected'

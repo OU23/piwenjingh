@@ -93,7 +93,8 @@ describe('工具版本列表（P17 恢复展示）', () => {
     expect(wrapper.findAll('.tb-ver__latest')[0]?.text()).toContain('最新');
   });
 
-  it('每行展示版本号、文件名、上传人与下载次数（A3）', async () => {
+  // M-23：列名随实现同步（原含"下载次数"，该列已按需求移除；断言未改动）
+  it('每行展示版本号、文件名、上传人与大小（A3）', async () => {
     const wrapper = await mountTable([V1_2, V1_0]);
     const text = wrapper.text();
 

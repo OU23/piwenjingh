@@ -10,15 +10,19 @@ export interface SettingVO {
   storageRoot: string | null;
   /** 单文件大小上限（字节），默认 10 GB */
   maxFileSize: number;
+  /** 上传分片大小（字节，v1.20 新增）；默认 20 MB，区间 5 ~ 100 MB */
+  chunkSize: number;
 }
 
 /** 保存时只提交变更项 */
 export interface SettingSaveDTO {
   storageRoot?: string;
   maxFileSize?: number;
+  /** 上传分片大小（字节）；不传表示不修改 */
+  chunkSize?: number;
 }
 
-/** 读取全局设置（登录即可；上传页需读取单文件上限） */
+/** 读取全局设置（登录即可；上传页需读取单文件上限与分片大小） */
 export function getSettings(): Promise<SettingVO> {
   return get<SettingVO>(SETTING_API.base);
 }
