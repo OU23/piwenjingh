@@ -128,7 +128,7 @@
 | --- | --- |
 | `oss:GetObject` | ★ **签名直链下载**：官方明确「预签名 URL 无需权限即可生成，但**只有具备 `oss:GetObject` 的签名者**，第三方才能通过该 URL 下载成功」；另用于 `complete` 的 HEAD 复核 |
 | `oss:PutObject` | B13 存量迁移（后端中转上传） |
-| `oss:DeleteObject` | `complete` 发现「对象大小与声明不符」时删对象回收空间；OSS 落点工具彻底删除 |
+| `oss:DeleteObject` | `complete` 发现「对象大小与声明不符」时删对象回收空间；OSS 落点工具彻底删除（⚠️ 2026-10-16 起 OSS 落点为**逻辑删除**，暂不依赖此项；恢复物理删除后即需） |
 | 4 个 multipart + `ListParts` | 直传中断清理 / 断点续传（配合角色策略） |
 | `sts:AssumeRole` | 允许后端 RAM 用户扮演上传角色（**只做 B13 可删这条**） |
 
@@ -214,7 +214,8 @@
 
 - **前 6 个 = 上传**（浏览器直传用）；**末尾 2 个**（`oss:GetObject` / `oss:DeleteObject`）= **后端**「读 / 删」用
   （内容读取、下载签名、存在性与大小核实要 `Get`；OSS 落点文件彻底删除要 `Delete`）。
-  ⚠️ **2026-10-16 起后端也走 STS 临时凭证**，这两个**必须给** —— 只给上传会出现"**上传正常、下载/删除 403 `bucket acl`**"。
+  ⚠️ **2026-10-16 起后端也走 STS 临时凭证**：`oss:GetObject` **必须给**（否则**下载** 403 `bucket acl`）；
+  `oss:DeleteObject` **建议一并给上** —— 当前 OSS 落点是**逻辑删除**（不删对象）暂不依赖它，日后恢复物理删除即需。
   （浏览器拿到的临时凭证另有**独立会话策略**限制为仅 6 个上传动作，所以**读不到、删不掉**任何文件。）
 - ⚠️ 资源只到 **`tools/*`**（正是本系统对象键的前缀），别的目录碰不到。
 - 角色详情「**基本信息**」里可调 **最大会话时间**：默认 **3600 秒**。若你想把 `OSS_STS_DURATION_SECONDS` 设成大于 3600（如 7200），**必须先把这里调到 ≥ 该值**（上限 43200），否则 `AssumeRole` 会失败。用默认 3600 则不用动。
@@ -559,29 +560,28 @@ mvn spring-boot:run "-Dspring-boot.run.profiles=dev"   # ⚠️ PowerShell 下�
 | `[STS] AssumeRole 失败 code=InvalidAccessKeyId` | `OSS_ACCESS_KEY_ID` 写错 / 该 AK 已被禁用 | 核对 AK，或重新生成 |
 | `[STS] AssumeRole 失败 code=InvalidTimeStamp` / 时间相关 | 服务器系统时间偏差过大 | 校准服务器时间（NTP） |
 | `[OSS] 探测失败：You have no right to access this object because of bucket acl` | **该 AK 没有这个桶的读权限**（`oss:GetObject`）。出现位置：下载签发时的存在性探测（`DownloadUrlService` → `exists()`）、直传完成时的 HEAD 复核 | 把**「策略 A」授给该 AK 所属用户** |
-| `[OSS] 读取失败 / 删除失败：…AccessDenied` | 同上，缺对应动作权限 | 同上 |
+| `[OSS] 读取失败：…AccessDenied` | 同上，缺对应动作权限 | 同上 |
+| （删除类报错）OSS 落点**已改逻辑删除** | 不再触发删除类权限问题；日志出现 `TOOL_PURGE_FILE ... SKIP_OSS_LOGICAL` 属**预期** | 无需处理（见 §9.1） |
 | `[OSS] …：The bucket you access does not belong to you` | `OSS_BUCKET` 写错，或 AK 属于**另一个账号** | 核对桶名 / AK 所属账号 |
 | `UnknownHostException` / 连接超时 | `OSS_ENDPOINT` 填错（如误填 `sts.*` 或 `-internal`） | 改成 `oss-cn-beijing.aliyuncs.com` |
 
-### 9.1 「删了工具，但 OSS 里对象还在」—— 三步定位
+### 9.1 「删了工具，但 OSS 里对象还在」—— 现在这是**预期行为**（逻辑删除）
 
-> **先看设计口径**：彻底删除时，**删文件失败只记日志、不抛异常**（`ToolPurgeService.deleteFileQuietly`，
-> 取舍是"**宁可留文件，不可留脏记录**"）⇒ "**记录没了、对象还在**"是**允许出现的中间态**，
-> 靠**孤儿清理**兜底（⚠️ 孤儿自动对账**本期明确未实现**，现阶段只能人工删）。
+> ⚠️ **2026-10-16 起：OSS 落点改为「逻辑删除」**（`ToolPurgeService.purgeFileFor`）——
+> 后端改用 STS 角色访问 OSS，而角色暂无 `oss:DeleteObject`，物理删除必 403。
+> ⇒ **清空回收站后：数据库记录消失、OSS 对象保留**（本地落点仍物理删除）。
+> **"记录没了、对象还在"是当前设计意图，不是 bug**；OSS 对象留待人工清理（或日后恢复物理删除）。
 
 | # | 查什么 | 结论 |
 | --- | --- | --- |
-| 1 | 后端日志搜 **`TOOL_PURGE`**，看 `target=tool:X **versions:N**` | `N>0` = 尝试删了 N 个文件；**`N=0` = 压根没尝试**（当时版本记录已不在） |
-| 2 | 搜 **`TOOL_PURGE_FILE`**，有没有 `result=FAIL` | **有 FAIL** = 那次 OSS 删除失败被吞掉 ⇒ 对象成**孤儿**，需人工删（**不是代码 bug**） |
-| 3 | OSS 控制台：你看到的是**「文件」**页签里的对象，还是**「碎片」（未完成分片）**？ | **碎片 `deleteObject` 管不到** —— 只能靠 **生命周期规则**清理；上传中断/失败留下的都是碎片 |
+| 1 | 后端日志搜 **`TOOL_PURGE`**，看 `target=tool:X **versions:N**` | `N>0` = 处理了 N 个版本（每个版本都走逻辑删除） |
+| 2 | 搜 **`TOOL_PURGE_FILE`** 的 result | **`SKIP_OSS_LOGICAL`** = OSS 落点按逻辑删除跳过（**预期**）；`FAIL` = **本地**落点删除失败 |
+| 3 | OSS 控制台：你看到的是**「文件」**还是**「碎片」**页签？ | 碎片 `deleteObject` 管不到，只能靠 **生命周期规则**清理 |
 
-**一分钟判定是不是 bug**：上传一个小文件 → 记下它的 key → 软删 → 清空回收站，然后看
-① 日志有没有 `TOOL_PURGE_FILE ... FAIL`？② 那个 **key** 在 OSS 里消失了吗？
+**当前验收口径**：上传小文件 → 软删 → 清空回收站 → **主列表与回收站都不再出现该工具**（库记录清掉即达标）；
+OSS 里对象保留属预期。
 
-- **没有 FAIL、key 也消失了** ⇒ 代码正常（之前的残留在历史/碎片里）；
-- **没有 FAIL、key 却还在** ⇒ **那才是 bug** —— 把日志发我，立刻查。
-
-> 顺带：**未完成分片的生命周期规则（1 天）** 就是为了自动清"碎片"，**新桶也要配**。
+> 顺带：**未完成分片的生命周期规则（1 天）** 用来自动清"碎片"，**新桶也要配**。
 
 **一句话诊断法**：
 - **只有 `AssumeRole` 报错** → 角色/信任策略/`sts:AssumeRole` 的问题；

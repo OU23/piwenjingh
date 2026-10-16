@@ -25,8 +25,9 @@
 }
 ```
 
-> `oss:GetObject` 供**内容读取 / 下载签名 / 存在性与大小核实**；`oss:DeleteObject` 供 **OSS 落点文件彻底删除**。
-> **只补 `GetObject` 会让下载能用、但删除仍 403。**
+> `oss:GetObject` 供**内容读取 / 下载签名 / 存在性与大小核实**（**必须**）；`oss:DeleteObject` 供 **OSS 落点文件物理删除**。
+> ⚠️ **2026-10-16 起 OSS 落点改为「逻辑删除」**（只删库记录、保留对象）⇒ 现阶段**只补 `GetObject` 即可**；
+> `DeleteObject` 建议一并给上（日后恢复物理删除时即需）。
 
 HeadObject 的权限是 `oss:GetObject`，无需添加名为 `oss:HeadObject` 的权限。
 参考：https://help.aliyun.com/zh/oss/developer-reference/headobject
@@ -64,7 +65,8 @@ https://help.aliyun.com/zh/well-architected/solution-251
 2. 上传一个新文件，确认 `/api/upload/direct/complete` 成功，出现 `UPLOAD_DIRECT_COMPLETE` 成功审计。
 3. 填写工具信息并提交，确认文件存在性检查和版本保存成功。
 4. **下载**该文件：签发 URL 里 `OSSAccessKeyId` 应以 **`STS.` 开头且带 `security-token`** —— 这是"真走 STS"的判据（仍是 `LTAI...` 就说明没接上 STS）。
-5. **删除**该工具并清空回收站，确认 OSS 控制台里对象消失。
+5. **删除**该工具并清空回收站：确认**主列表与回收站都不再出现该工具**（库记录清掉即达标）。
+   ⚠️ OSS 里对象**会保留**（2026-10-16 起为逻辑删除，属预期，见 `OSS配置说明.md` §9.1）。
 6. 若出现 2006 / 403，区分 `[STS] AssumeRole 失败`（凭据或角色信任问题）与 `[OSS] ... bucket acl`
    （角色权限不足；报错里 `AuthPrincipalType=AssumedRoleUser` 表示 STS 身份已生效、卡在角色策略）。
 

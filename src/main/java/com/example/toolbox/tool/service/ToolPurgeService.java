@@ -8,6 +8,7 @@ import com.example.toolbox.common.util.IdUtils;
 import com.example.toolbox.security.LoginUser;
 import com.example.toolbox.security.ScopeChecker;
 import com.example.toolbox.security.UserContext;
+import com.example.toolbox.storage.StorageBackend;
 import com.example.toolbox.storage.StorageService;
 import com.example.toolbox.tool.dto.ToolBatchDTO;
 import com.example.toolbox.tool.entity.ToolDO;
@@ -36,6 +37,12 @@ import java.util.List;
  * ① 磁盘物理文件 → ② 版本记录 → ③ 标签关联 → ④ 工具记录。
  * 先删文件再删库，是为了让"文件已删、记录还在"这种中间态**可见且可重试**
  * （重跑彻底删除会再次尝试删文件），而不是留下"记录没了、文件还在"的隐形占盘。
+ *
+ * <p><b>⚠️ 2026-10-16 调整：OSS 落点改为「逻辑删除」</b> ——
+ * 后端改用 STS 角色访问 OSS 后，角色**暂无 `oss:DeleteObject` 权限**，物理删除必然 403。
+ * 因此 **OSS 落点只删数据库记录、保留 OSS 对象**（本地落点仍物理删除，不受影响）。
+ * 待角色补齐 `oss:DeleteObject` 后，把 {@link #purgeFileFor} 的 OSS 分支合并回
+ * {@link #deleteFileQuietly} 即恢复"彻底删除"。
  *
  * <p><b>安全性</b>：仅作用于**已软删**的工具 —— 对未软删的 ID **忽略**，防止误删线上工具；
  * 可见范围仍走唯一入口（R3），全局管理员按 N-04 可跨部门。
@@ -89,9 +96,9 @@ public class ToolPurgeService {
         Long toolId = tool.getId();
         List<ToolVersionDO> versions = toolService.listVersions(toolId);
 
-        // ① 磁盘物理文件
+        // ① 物理文件（local 物理删除；oss 逻辑删除，见 purgeFileFor）
         for (ToolVersionDO version : versions) {
-            deleteFileQuietly(version.getFileKey(), toolId);
+            purgeFileFor(version, toolId);
         }
         // ② 版本记录
         toolVersionMapper.delete(Wrappers.<ToolVersionDO>lambdaQuery()
@@ -107,6 +114,23 @@ public class ToolPurgeService {
 
         auditLogger.write(operator(), "TOOL_PURGE",
                 "tool:" + toolId + " versions:" + versions.size(), "OK");
+    }
+
+    /**
+     * 删除版本对应的物理文件 —— **按落点区分**。
+     *
+     * <p>⚠️ **2026-10-16**：**OSS 落点不做物理删除**（只删库记录，OSS 对象保留）。
+     * 原因：后端改用 STS 角色访问 OSS，而角色暂无 `oss:DeleteObject` 权限，删对象必 403；
+     * 与其"每删一次报一次错"，不如**显式跳过并留审计**。**本地落点行为不变**（仍物理删除）。
+     */
+    private void purgeFileFor(ToolVersionDO version, Long toolId) {
+        if (StorageBackend.of(version.getStorageBackend()) == StorageBackend.OSS) {
+            log.info("彻底删除：OSS 落点按逻辑删除处理（保留对象，仅删库记录）toolId={} fileKey={}",
+                    toolId, version.getFileKey());
+            auditLogger.write(operator(), "TOOL_PURGE_FILE", "tool:" + toolId, "SKIP_OSS_LOGICAL");
+            return;
+        }
+        deleteFileQuietly(version.getFileKey(), toolId);
     }
 
     /**

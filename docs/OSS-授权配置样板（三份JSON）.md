@@ -1,8 +1,9 @@
 # OSS 授权配置样板（三份 JSON · 逐级路径）
 
 > ⚠️ **2026-10-16 起架构变更**：后端**全部对象操作**（读 / 写 / 删 / 下载签名）都改用 **STS 临时凭证**，
-> **不再用长期 AK 直连桶**。因此**角色的权限策略必须同时包含 `oss:PutObject`、`oss:GetObject`、`oss:DeleteObject`**
-> （见 2️⃣）—— 少了 `Get` / `Delete` 就会出现"上传正常、下载/删除 403 `bucket acl`"。
+> **不再用长期 AK 直连桶**。角色权限策略至少需含 `oss:PutObject` + **`oss:GetObject`**（见 2️⃣）——
+> 少了 `GetObject` 会出现"上传正常、**下载** 403 `bucket acl`"。
+> `oss:DeleteObject` **建议一并给上**：**当前 OSS 落点为「逻辑删除」**（不删对象）暂不依赖它，日后恢复物理删除即需。
 > 详见 [OSS-STS核实说明](OSS-STS核实说明.md)。浏览器仍通过会话策略限制为仅上传。
 
 > 用途：**一次把三份策略配全**，让「后端访问 OSS（走 STS）」与「浏览器直传」都能跑通。
@@ -92,10 +93,10 @@
 ```
 
 > **前 6 个 = 上传**（浏览器直传用）；**末尾 2 个** = **后端**「读 / 删」用 ——
-> `oss:GetObject`：内容读取、下载签名、存在性与大小核实（HeadObject 的权限就是 `oss:GetObject`）；
-> `oss:DeleteObject`：OSS 落点文件彻底删除。
+> `oss:GetObject`：内容读取、下载签名、存在性与大小核实（HeadObject 的权限就是 `oss:GetObject`）—— **必须**；
+> `oss:DeleteObject`：OSS 落点文件物理删除 —— **建议给上**（当前为逻辑删除，暂不依赖；恢复物理删除即需）。
 > ⚠️ **2026-10-16 前这两个是刻意不配的**（当时后端用长期 AK 直连，角色只管浏览器上传）；
-> **现在后端也走 STS，必须补齐**，否则下载 / 删除会报 `AccessDenied ... bucket acl`
+> **现在后端也走 STS**：缺 `GetObject` 会让**下载**报 `AccessDenied ... bucket acl`
 > （报错里 `AuthPrincipalType=AssumedRoleUser` 就表示 STS 身份已生效、卡在角色权限）。
 > 资源仍只到 `tools/*`；**浏览器拿到的临时凭证另有会话策略限制（仅 6 个上传动作），读不到、删不掉**。
 > ⚠️ 角色「基本信息」里的**最大会话时间**保持默认 3600 即可（应用默认也用 3600）。
@@ -164,9 +165,9 @@ $env:OSS_STS_ROLE_ARN="acs:ram::<账号ID>:role/<角色名>"
 python oss-probe.py
 ```
 
-期望：`[AK] AssumeRole ✅`、`[AK] Put/Get/Delete ✅`、`[STS] Put ✅ / Get ✅ / Delete ✅`
-（③ 的 `Delete` 取决于**角色权限**：按本样板（已含 `oss:DeleteObject`）= ✅；
-若角色仍是 2026-10-16 之前的"只写"策略 = ❌ —— 那正是后端删不掉 OSS 文件的原因）
+期望：`[AK] AssumeRole ✅`、`[AK] Put/Get/Delete ✅`、`[STS] Put ✅ / Get ✅`
+（③ 的 `Delete`：按本样板（已含 `oss:DeleteObject`）= ✅；未给 = ❌ ——
+ ⚠️ 2026-10-16 起 OSS 落点为**逻辑删除**，`Delete` 为 ❌ **不影响功能**，但建议补上，日后恢复物理删除即需）
 
 2. **Bucket CORS（直传必需，且最容易漏）**
 
