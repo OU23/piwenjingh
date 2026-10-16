@@ -23,6 +23,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import java.time.Duration;
+import java.time.Instant;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -75,8 +78,14 @@ class ToolPurgeOssRoutingTest extends IntegrationTestBase {
     @Test
     void purgeDeletesObjectFromOssWhenBackendIsOss() {
         loginAs(1L, "admin", 1L, PermissionCode.TOOL_DELETE);
-        when(credentialIssuer.issueForVerification(anyString())).thenReturn(
-                new StsCredential("STS-ak", "STS-sk", "STS-token", "2026-10-16T12:00:00Z"));
+        // 夹具对齐（非断言削弱）：2026-10-16 起所有对象操作统一走 STS，故读/写/删签发方法都要桩上；
+        // 过期时间改用相对值，避免写死时间戳变成"时间炸弹"。
+        StsCredential credential = new StsCredential("STS-ak", "STS-sk", "STS-token",
+                Instant.now().plus(Duration.ofHours(2)).toString());
+        when(credentialIssuer.issueForRead(anyString())).thenReturn(credential);
+        when(credentialIssuer.issueForVerification(anyString())).thenReturn(credential);
+        when(credentialIssuer.issueForWrite(anyString())).thenReturn(credential);
+        when(credentialIssuer.issueForDelete(anyString())).thenReturn(credential);
 
         OSS[] captured = new OSS[1];
         try (var ignored = mockConstruction(OSSClientBuilder.class, (builder, context) -> {
@@ -98,7 +107,7 @@ class ToolPurgeOssRoutingTest extends IntegrationTestBase {
             dto.setFileSize(8L);
 
             var result = toolWriteService.create(dto);
-            verify(credentialIssuer).issueForVerification(fileKey);
+            verify(credentialIssuer).issueForRead(fileKey);
 
             // ① 落点字段必须随写入后端记为 oss（回退修复前会落为 local）
             ToolVersionDO v = toolVersionMapper.selectOne(

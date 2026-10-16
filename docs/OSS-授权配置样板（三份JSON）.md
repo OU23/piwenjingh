@@ -1,9 +1,11 @@
 # OSS 授权配置样板（三份 JSON · 逐级路径）
 
-> STS 核实改造后，现有角色还需具备 `oss:GetObject`，用于后端存在性和大小检查。
+> ⚠️ **2026-10-16 起架构变更**：后端**全部对象操作**（读 / 写 / 删 / 下载签名）都改用 **STS 临时凭证**，
+> **不再用长期 AK 直连桶**。因此**角色的权限策略必须同时包含 `oss:PutObject`、`oss:GetObject`、`oss:DeleteObject`**
+> （见 2️⃣）—— 少了 `Get` / `Delete` 就会出现"上传正常、下载/删除 403 `bucket acl`"。
 > 详见 [OSS-STS核实说明](OSS-STS核实说明.md)。浏览器仍通过会话策略限制为仅上传。
 
-> 用途：**一次把三份策略配全**，让「后端直连 OSS」与「浏览器直传」都能跑通。
+> 用途：**一次把三份策略配全**，让「后端访问 OSS（走 STS）」与「浏览器直传」都能跑通。
 > 这份同时也是**交给对方（管理员）的标准样板** —— 在他们账号上照配一遍即可。
 > 占位符统一说明：`<账号ID>` / `<角色名>` / `<子账号登录名>` / `<bucket>`。
 
@@ -79,7 +81,9 @@
         "oss:UploadPart",
         "oss:CompleteMultipartUpload",
         "oss:AbortMultipartUpload",
-        "oss:ListParts"
+        "oss:ListParts",
+        "oss:GetObject",
+        "oss:DeleteObject"
       ],
       "Resource": ["acs:oss:*:*:<bucket>/tools/*"]
     }
@@ -87,8 +91,13 @@
 }
 ```
 
-> **刻意不含** `oss:GetObject` / `oss:DeleteObject`：浏览器拿到的临时凭证**读不到、删不掉**任何文件。
-> 资源也只到 `tools/*`（本系统存放文件的目录）。
+> **前 6 个 = 上传**（浏览器直传用）；**末尾 2 个** = **后端**「读 / 删」用 ——
+> `oss:GetObject`：内容读取、下载签名、存在性与大小核实（HeadObject 的权限就是 `oss:GetObject`）；
+> `oss:DeleteObject`：OSS 落点文件彻底删除。
+> ⚠️ **2026-10-16 前这两个是刻意不配的**（当时后端用长期 AK 直连，角色只管浏览器上传）；
+> **现在后端也走 STS，必须补齐**，否则下载 / 删除会报 `AccessDenied ... bucket acl`
+> （报错里 `AuthPrincipalType=AssumedRoleUser` 就表示 STS 身份已生效、卡在角色权限）。
+> 资源仍只到 `tools/*`；**浏览器拿到的临时凭证另有会话策略限制（仅 6 个上传动作），读不到、删不掉**。
 > ⚠️ 角色「基本信息」里的**最大会话时间**保持默认 3600 即可（应用默认也用 3600）。
 
 ---
@@ -125,9 +134,10 @@
 }
 ```
 
-> **这一段是"一把 AK 跑完全程"的关键**：
-> ① 第一条 = 后端**直连 OSS**（迁移写入 / 上传收尾 HEAD 复核 / 签发下载链接 / 删除）要用的**对象级**权限；
-> ② 第二条 = 允许它**扮演上面的角色**（拿临时凭证给浏览器直传用）。
+> **这一段是"一把 AK 跑全程"的关键**：
+> ① 第一条 = **长期 AK 自身的对象级权限**（保留作探针/兜底排查用；**2026-10-16 后后端不再直连**，
+>    真正的读/写/删权限落在**角色**上，见 2️⃣）；
+> ② 第二条 = 允许它**扮演上面的角色**（后端与浏览器都靠它换临时凭证）。
 > ⚠️ 少了 ② → 报 `You are not authorized to do this action. You should be authorized by RAM.`
 
 ---
@@ -154,8 +164,9 @@ $env:OSS_STS_ROLE_ARN="acs:ram::<账号ID>:role/<角色名>"
 python oss-probe.py
 ```
 
-期望：`[AK] AssumeRole ✅`、`[AK] Put/Get/Delete ✅`、`[STS] Put ✅ / Get ✅`
-（③ 的 `Delete`：角色只挂"只写"策略（本样板）= ❌，**属预期**；若角色被授予了全权限 = ✅）
+期望：`[AK] AssumeRole ✅`、`[AK] Put/Get/Delete ✅`、`[STS] Put ✅ / Get ✅ / Delete ✅`
+（③ 的 `Delete` 取决于**角色权限**：按本样板（已含 `oss:DeleteObject`）= ✅；
+若角色仍是 2026-10-16 之前的"只写"策略 = ❌ —— 那正是后端删不掉 OSS 文件的原因）
 
 2. **Bucket CORS（直传必需，且最容易漏）**
 

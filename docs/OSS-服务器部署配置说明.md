@@ -90,8 +90,9 @@ curl -s http://127.0.0.1:8080/api/upload/mode -H "Authorization: Bearer <登录�
 
 ## 6. 平台侧三项前置（缺一不可）
 
-1. **长期 AK 对桶有权限** —— 后端「删对象 / 下载签名 / complete 复核」都靠它；无权限 → 接口报 **2006**。
-2. **STS 角色 + 授权** —— `TOOLBOX_STORAGE_TYPE=oss` 时 `OSS_STS_ROLE_ARN` 必填，缺则**后端启动即失败**。
+1. **角色（`OSS_STS_ROLE_ARN`）需同时具备 `oss:GetObject` + `oss:PutObject` + `oss:DeleteObject`** ——
+   2026-10-16 起后端**全部对象操作走 STS 临时凭证**（下载签名 / 内容读取 / 迁移写入 / 删除）；缺任一项 → 对应操作报 **403 `bucket acl`**。
+2. **STS 角色本身可用** —— `TOOLBOX_STORAGE_TYPE=oss` 时 `OSS_STS_ROLE_ARN` 必填，缺则**后端启动即失败**；长期 AK 只需能调 `sts:AssumeRole`（不再需要它对桶有对象权限）。
 3. **Bucket CORS** —— 放行浏览器访问服务器的**实际来源**（`http(s)://<域名或IP>[:端口]`），并**暴露 `ETag`**。
 
 > 以上三步的详细做法见 `OSS配置说明.md` §2。

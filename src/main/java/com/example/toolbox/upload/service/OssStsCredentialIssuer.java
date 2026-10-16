@@ -58,6 +58,18 @@ public class OssStsCredentialIssuer {
     /** 对象键的部门前缀模板：{@code <bucket>/tools/<deptId>/*} */
     static final String RESOURCE_TEMPLATE = "acs:oss:*:*:%s/tools/%d/*";
 
+    /** 后端服务端对象操作凭证的会话名（审计标签）；沿用原取值，兼容既有缓存键与断言。 */
+    static final String BACKEND_SESSION_NAME = "toolbox-verification";
+
+    /** 后端「读」所需动作（下载签名 / 服务端读取 / 存在性与大小核实）。 */
+    static final List<String> READ_ACTIONS = List.of("oss:GetObject");
+
+    /** 后端「写」所需动作（存量迁移落盘 putObject）。 */
+    static final List<String> WRITE_ACTIONS = List.of("oss:PutObject");
+
+    /** 后端「删」所需动作（OSS 落点文件彻底删除）。 */
+    static final List<String> DELETE_ACTIONS = List.of("oss:DeleteObject");
+
     private final OssProperties ossProperties;
     private final StorageProperties storageProperties;
 
@@ -90,17 +102,47 @@ public class OssStsCredentialIssuer {
         return assumeRole("toolbox-" + userId, buildSessionPolicy(deptId));
     }
 
-    /** 后端专用核实凭证：复用同一角色，仅允许读取指定对象，绝不下发给浏览器。 */
+    /**
+     * 后端服务端「读」凭证：复用同一角色，**Resource 精确到单个对象、仅 {@code oss:GetObject}**，绝不下发给浏览器。
+     * <p>下载签名 / 服务端读取 / 存在性与大小核实**共用这一份**（同一缓存键，不重复 AssumeRole）。
+     */
+    public StsCredential issueForRead(String objectKey) {
+        return issueForObject(objectKey, READ_ACTIONS);
+    }
+
+    /** 兼容既有调用与测试：核实（读）语义，行为与 {@link #issueForRead} 完全一致（同一缓存键）。 */
     public StsCredential issueForVerification(String objectKey) {
+        return issueForRead(objectKey);
+    }
+
+    /** 后端服务端「写」凭证：精确到单个对象、仅 {@code oss:PutObject}（存量迁移落盘用）。 */
+    public StsCredential issueForWrite(String objectKey) {
+        return issueForObject(objectKey, WRITE_ACTIONS);
+    }
+
+    /** 后端服务端「删」凭证：精确到单个对象、仅 {@code oss:DeleteObject}（OSS 落点文件彻底删除用）。 */
+    public StsCredential issueForDelete(String objectKey) {
+        return issueForObject(objectKey, DELETE_ACTIONS);
+    }
+
+    /** 后端服务端对象操作凭证：Resource 精确到单对象、Action 按用途最小授予；同 (session, policy) 走缓存复用。 */
+    private StsCredential issueForObject(String objectKey, List<String> actions) {
         // Resource 中的通配符会扩大授权范围，控制字符也不允许进入策略 JSON。
         if (isBlank(objectKey) || objectKey.indexOf('*') >= 0 || objectKey.indexOf('?') >= 0
                 || objectKey.chars().anyMatch(Character::isISOControl)) {
             throw new BusinessException(Code.PARAM_INVALID, "对象键非法");
         }
         String resource = "acs:oss:*:*:" + ossProperties.getBucket() + "/" + objectKey;
+        StringBuilder actionJson = new StringBuilder();
+        for (int i = 0; i < actions.size(); i++) {
+            if (i > 0) {
+                actionJson.append(',');
+            }
+            actionJson.append('"').append(actions.get(i)).append('"');
+        }
         String policy = "{\"Version\":\"1\",\"Statement\":[{\"Effect\":\"Allow\","
-                + "\"Action\":[\"oss:GetObject\"],\"Resource\":[\"" + jsonEscape(resource) + "\"]}]}";
-        return assumeRole("toolbox-verification", policy);
+                + "\"Action\":[" + actionJson + "],\"Resource\":[\"" + jsonEscape(resource) + "\"]}]}";
+        return assumeRole(BACKEND_SESSION_NAME, policy);
     }
 
     private StsCredential assumeRole(String sessionName, String policy) {

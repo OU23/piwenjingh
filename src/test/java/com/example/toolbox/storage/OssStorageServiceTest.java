@@ -19,6 +19,7 @@ import java.io.InputStream;
 import java.net.URL;
 import java.nio.file.NoSuchFileException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Date;
 import java.util.Optional;
 
@@ -76,8 +77,14 @@ class OssStorageServiceTest {
         storageProps = new StorageProperties();
         oss = mock(OSS.class);
         issuer = mock(OssStsCredentialIssuer.class);
-        when(issuer.issueForVerification(anyString())).thenReturn(
-                new StsCredential("STS-ak", "STS-sk", "STS-token", "2026-10-16T12:00:00Z"));
+        // 夹具对齐（非断言削弱）：2026-10-16 起所有对象操作统一走 STS 临时凭证，
+        // 故「读 / 写 / 删」三类签发方法都要桩上；过期时间改用**相对时间**，避免写死时间戳变成"时间炸弹"。
+        StsCredential credential = new StsCredential("STS-ak", "STS-sk", "STS-token",
+                Instant.now().plus(Duration.ofHours(2)).toString());
+        when(issuer.issueForRead(anyString())).thenReturn(credential);
+        when(issuer.issueForVerification(anyString())).thenReturn(credential);
+        when(issuer.issueForWrite(anyString())).thenReturn(credential);
+        when(issuer.issueForDelete(anyString())).thenReturn(credential);
         service = new OssStorageService(props, storageProps, issuer);
     }
 
@@ -99,7 +106,7 @@ class OssStorageServiceTest {
         try (var builders = stubClient()) {
             assertTrue(service.exists("tools/1/file.zip"));
             assertEquals(128, service.size("tools/1/file.zip"));
-            verify(issuer, times(2)).issueForVerification("tools/1/file.zip");
+            verify(issuer, times(2)).issueForRead("tools/1/file.zip");
             assertEquals(2, builders.constructed().size());
             for (OSSClientBuilder builder : builders.constructed()) {
                 verify(builder).build(props.getEndpoint(), "STS-ak", "STS-sk", "STS-token");
@@ -122,7 +129,7 @@ class OssStorageServiceTest {
 
     @Test
     void stsFailureDoesNotCreateOssClient() {
-        when(issuer.issueForVerification("k")).thenThrow(
+        when(issuer.issueForRead("k")).thenThrow(
                 new BusinessException(Code.STORAGE_OSS_UNAVAILABLE, "对象存储暂不可用"));
         try (var builders = stubClient()) {
             assertOssUnavailable(() -> service.exists("k"));

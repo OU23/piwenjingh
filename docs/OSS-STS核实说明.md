@@ -1,4 +1,9 @@
-# 后端通过 STS 核实文件
+# 后端通过 STS 访问 OSS
+
+> ⚠️ **2026-10-16 范围扩展**：本文最初只描述「核实（`exists` / `size`）改用 STS」。
+> 此后**全部对象操作都已改用 STS** —— 内容读取（`open`）、**下载签名（`presignedUrl`）**、
+> 写入（`save`）、删除（`delete`）**同样不再使用长期 AK**；长期 AK 现在**只**用于向 STS 换取临时凭证。
+> 下文「对象内容读取、下载签名、写入、删除仍沿用原有长期凭据客户端」的表述**已过时**（见该节更新块）。
 
 后端的 `OssStorageService.exists` 和 `size` 改用 STS 临时凭据访问 OSS。
 因此上传完成登记、提交工具/版本时的存在性检查，以及其他调用这两个方法的地方都会使用 STS。
@@ -9,16 +14,19 @@
 继续使用现有的 `OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET` 调用 STS，
 角色仍为 `OSS_STS_ROLE_ARN`，不需要新建 RAM 用户或角色。
 
-现有角色必须允许读取待核实的对象。如果角色原来只有上传权限，在角色权限策略中增加下面的语句
+现有角色必须允许**读取与删除**目标对象。如果角色原来只有上传权限，在角色权限策略中增加下面的语句
 （替换 `<bucket>`，并保留原上传权限）：
 
 ```json
 {
   "Effect": "Allow",
-  "Action": ["oss:GetObject"],
+  "Action": ["oss:GetObject", "oss:DeleteObject"],
   "Resource": ["acs:oss:*:*:<bucket>/tools/*"]
 }
 ```
+
+> `oss:GetObject` 供**内容读取 / 下载签名 / 存在性与大小核实**；`oss:DeleteObject` 供 **OSS 落点文件彻底删除**。
+> **只补 `GetObject` 会让下载能用、但删除仍 403。**
 
 HeadObject 的权限是 `oss:GetObject`，无需添加名为 `oss:HeadObject` 的权限。
 参考：https://help.aliyun.com/zh/oss/developer-reference/headobject
@@ -42,18 +50,23 @@ STS 签发器使用 Guava 在进程内缓存临时凭据，最多保留 1024 条
 参考阿里云关于缓存时长应小于 STS 有效期的建议：
 https://help.aliyun.com/zh/well-architected/solution-251
 
-对象内容读取、下载签名、写入、删除仍沿用原有长期凭据客户端。本次只改造核实，
-因此大小不符时的删除清理、下载和删除功能仍依赖原有长期凭据的权限。
+> ⚠️ **已更新（2026-10-16）**：原「对象内容读取、下载签名、写入、删除仍沿用原有长期凭据客户端」的说法**已失效** ——
+> 现在**全部改为 STS 临时凭据客户端**，各操作使用**按用途最小授予**的后端凭证：
+> 读 → `oss:GetObject`、写 → `oss:PutObject`、删 → `oss:DeleteObject`，`Resource` 均**精确到单个对象**。
+> ⇒ **角色权限策略必须同时包含这三个 Action**（会话策略 ∩ 角色权限）；缺任一项，对应操作报 403 `bucket acl`。
 
-如果长期 AccessKey 连 STS AssumeRole 也无法调用，本次改造仍会返回 2006。
-它只适用于现有身份能够申请 STS、所扮演角色具备对象读取权限的情况。
+如果长期 AccessKey 连 STS AssumeRole 也无法调用，**一切 OSS 操作**都会返回 2006。
+它适用于现有身份能够申请 STS、所扮演角色具备**读 / 写 / 删**对象权限的情况。
 
 ## 部署后验证
 
-1. 更新角色权限（若原先已有 `oss:GetObject`，无需修改），重新构建并部署后端。
+1. 更新角色权限（**需含 `oss:GetObject` 与 `oss:DeleteObject`** —— 仅上传动作不够），重新构建并部署后端。
 2. 上传一个新文件，确认 `/api/upload/direct/complete` 成功，出现 `UPLOAD_DIRECT_COMPLETE` 成功审计。
 3. 填写工具信息并提交，确认文件存在性检查和版本保存成功。
-4. 若出现 2006，区分 `[STS] AssumeRole 失败` 与 `[OSS]` 的权限/网络错误，核查现有角色和请求来源限制。
+4. **下载**该文件：签发 URL 里 `OSSAccessKeyId` 应以 **`STS.` 开头且带 `security-token`** —— 这是"真走 STS"的判据（仍是 `LTAI...` 就说明没接上 STS）。
+5. **删除**该工具并清空回收站，确认 OSS 控制台里对象消失。
+6. 若出现 2006 / 403，区分 `[STS] AssumeRole 失败`（凭据或角色信任问题）与 `[OSS] ... bucket acl`
+   （角色权限不足；报错里 `AuthPrincipalType=AssumedRoleUser` 表示 STS 身份已生效、卡在角色策略）。
 
 单元测试使用模拟 STS/OSS，验证单对象只读策略、SecurityToken 传递、客户端释放、
 无长期凭据回退、缓存隔离/刷新/并发/淘汰、STS/OSS 故障隔离及原有上传/提交行为；

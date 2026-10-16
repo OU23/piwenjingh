@@ -26,11 +26,11 @@
 `TOOLBOX_STORAGE_TYPE`（local/oss）、`OSS_ENDPOINT`、`OSS_BUCKET`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`、
 `OSS_URL_TTL_SECONDS`、`OSS_STS_ROLE_ARN`、`OSS_STS_DURATION_SECONDS`、`OSS_STS_ENDPOINT`
 
-## 三、存储实现 —— ★【长期 AK 的唯一直接使用者】
+## 三、存储实现 —— ★【对象操作全部走 STS 临时凭证（2026-10-16 起）】
 
 | ☐ | 文件 | 作用 | 重点看 |
 | --- | --- | --- | --- |
-| ☐ | `src/main/java/com/example/toolbox/storage/OssStorageService.java` | **后端直连 OSS 的全部动作** | ★ 第 186–192 行 `client()`：用 `getAccessKeyId/Secret` 建 client。方法：`save`(putObject) / `openStream`(getObject) / `exists` / `size`(getObjectMetadata) / `delete` / `presignedUrl` |
+| ☐ | `src/main/java/com/example/toolbox/storage/OssStorageService.java` | **后端访问 OSS 的全部动作** | ★ `clientFor(StsCredential)`：每次操作用**临时凭证 + SecurityToken** 建一次性 client，用完 `shutdownQuietly`（`open` 的 client 随流关闭释放）；**已无长期 AK 直连**。方法：`save`(putObject) / `open`(getObject) / `exists` / `size`(getObjectMetadata) / `delete` / `presignedUrl`（读/写/删分别取 `issueForRead/Write/Delete`） |
 | ☐ | `src/main/java/com/example/toolbox/storage/StorageService.java` | 存储抽象接口 | 只有 `presignedUrl`（读），**无上传类接口** |
 | ☐ | `src/main/java/com/example/toolbox/storage/LocalStorageService.java` | 本地磁盘实现 | 对照看 OSS 实现的行为一致性 |
 | ☐ | `src/main/java/com/example/toolbox/storage/RoutedStorageService.java` | `@Primary` 路由 | 按 **每个文件的实际落点** 分流（读/删） |
@@ -42,9 +42,9 @@
 
 | ☐ | 文件 | 作用 | 重点看 |
 | --- | --- | --- | --- |
-| ☐ | `src/main/java/com/example/toolbox/upload/service/OssStsCredentialIssuer.java` | 调 `AssumeRole` 签发临时凭证 | ★ 长期 AK **只在这里**用于 STS；内联会话策略限 `tools/<deptId>/*` + 6 个上传动作（**不给 Get/Delete**）；`type=oss` 且 role-arn 空 → 启动失败 |
+| ☐ | `src/main/java/com/example/toolbox/upload/service/OssStsCredentialIssuer.java` | 调 `AssumeRole` 签发临时凭证 | ★ **长期 AK 只在这里**用于 STS（不再直接访问对象）。浏览器凭证：`tools/<deptId>/*` + 6 个上传动作（**不给 Get/Delete**）；后端凭证：`issueForRead` / `issueForWrite` / `issueForDelete` **精确到单对象**（`GetObject` / `PutObject` / `DeleteObject`）；`type=oss` 且 role-arn 空 → 启动失败 |
 | ☐ | `src/main/java/com/example/toolbox/upload/service/StsCredential.java` | 临时凭证载体 | `toString()` 是否打码（**禁入日志**） |
-| ☐ | `src/main/java/com/example/toolbox/upload/service/UploadDirectService.java` | 模式判定 / 签发 / 收尾 | `mode()`（按全局开关分流）；`complete()` 的 **HEAD 复核 → 用的是长期 AK** |
+| ☐ | `src/main/java/com/example/toolbox/upload/service/UploadDirectService.java` | 模式判定 / 签发 / 收尾 | `mode()`（按全局开关分流）；`complete()` 的 **HEAD 复核 → 经 `StorageService.exists`（现走 STS）** |
 | ☐ | `src/main/java/com/example/toolbox/upload/controller/UploadDirectController.java` | 3 个端点 | `GET /api/upload/mode`、`POST /api/upload/direct/credentials`、`POST /api/upload/direct/complete` |
 | ☐ | `.../upload/vo/UploadModeVO.java` · `UploadCredentialVO.java` | 出参 | 前端据此分流 / 建 `ali-oss` 客户端 |
 | ☐ | `.../upload/dto/UploadDirectCredentialDTO.java` · `UploadDirectCompleteDTO.java` | 入参 | 与契约 §8.6 / §8.7 对齐 |

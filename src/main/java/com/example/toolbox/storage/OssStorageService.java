@@ -12,12 +12,12 @@ import com.example.toolbox.common.result.Code;
 import com.example.toolbox.upload.service.OssStsCredentialIssuer;
 import com.example.toolbox.upload.service.StsCredential;
 import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.io.FileNotFoundException;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
@@ -26,6 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.NoSuchFileException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.Date;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,13 +34,15 @@ import java.util.UUID;
 /**
  * 阿里云 OSS 存储实现（M-22 / E-01）。
  *
+ * <p><b>身份模型（M-23 修订 / 2026-10-16）</b>：本类**不再用长期 AK 直连 OSS**。
+ * 长期 AK 只用于向 STS 换取临时凭证（见 {@link OssStsCredentialIssuer}）；
+ * 每一次对象操作都**新建一个携带临时凭证（含 SecurityToken）的客户端，用完即关**，
+ * 且凭证的 {@code Resource} 精确到该对象、{@code Action} 按用途最小授予
+ * （读 {@code GetObject} / 写 {@code PutObject} / 删 {@code DeleteObject}）。
+ *
  * <p><b>隔离约束（E-02，硬要求）</b>：OSS 的初始化与全部调用都包在**独立错误边界**内，
  * 异常**一律转 {@link Code#STORAGE_OSS_UNAVAILABLE}（2006）**，不得抛到全局、不得 500；
  * OSS 故障时登录 / 检索 / 本地文件读写**不受影响**。
- *
- * <p><b>客户端生命周期</b>：长期凭据客户端单例懒加载，进程退出时关闭；
- * 存在性和大小核实使用单对象 STS（由签发器缓存并在到期前刷新），每次操作后关闭核实客户端。
- * 未配置时**不建立连接**（避免"配错就把服务拖挂"）。
  *
  * <p><b>原子性</b>：对象存储天然满足"内容完整后对象才可见"，无需临时文件。
  */
@@ -48,11 +51,16 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class OssStorageService implements StorageService {
 
+    /**
+     * 签名 URL 的过期时间最多贴近"临时凭证剩余有效期 − 本边界"。
+     * 依据阿里云规则：STS 凭证与签名 URL 都设有效期时**以最小者为准**，
+     * 故不能让 URL 的有效期越出凭证剩余寿命，否则会出现"链接名义上未过期、实际已失效"。
+     */
+    private static final Duration CREDENTIAL_SAFETY_MARGIN = Duration.ofSeconds(60);
+
     private final OssProperties ossProperties;
     private final StorageProperties storageProperties;
     private final OssStsCredentialIssuer credentialIssuer;
-
-    private volatile OSS client;
 
     /**
      * 配置校验（A16）：仅当写入后端 = oss 时，要求 OSS 凭据齐备，**启动即失败**（可预期的运维配置错误）。
@@ -67,18 +75,6 @@ public class OssStorageService implements StorageService {
         }
     }
 
-    @PreDestroy
-    void shutdown() {
-        OSS c = client;
-        if (c != null) {
-            try {
-                c.shutdown();
-            } catch (RuntimeException e) {
-                log.warn("[OSS] 关闭客户端异常：{}", e.getMessage());
-            }
-        }
-    }
-
     @Override
     public String save(String storageKey, InputStream data, long size) throws IOException {
         if (size <= 0) {
@@ -87,22 +83,42 @@ public class OssStorageService implements StorageService {
         }
         ObjectMetadata metadata = new ObjectMetadata();
         metadata.setContentLength(size);
+        OSS client = null;
         try {
-            client().putObject(ossProperties.getBucket(), storageKey, data, metadata);
+            client = clientFor(credentialIssuer.issueForWrite(storageKey));
+            client.putObject(ossProperties.getBucket(), storageKey, data, metadata);
             return storageKey;
         } catch (OSSException | ClientException e) {
             throw ossUnavailable("写入失败：" + e.getMessage(), e);
+        } finally {
+            shutdownQuietly(client);
         }
     }
 
     @Override
     public InputStream open(String storageKey) throws IOException {
+        OSS client = null;
+        boolean handedOff = false;
         try {
-            OSSObject object = client().getObject(ossProperties.getBucket(), storageKey);
+            client = clientFor(credentialIssuer.issueForRead(storageKey));
+            OSSObject object = client.getObject(ossProperties.getBucket(), storageKey);
             if (object == null) {
                 throw new FileNotFoundException("存储键不存在：" + storageKey);
             }
-            return object.getObjectContent();
+            OSS owned = client;
+            handedOff = true;
+            // 返回的是**网络流**：客户端必须活到流被关闭为止，故此处不 finally 关闭，
+            // 而是把关闭动作挂到流上（接口约定：调用方负责关闭流 → 关闭时释放连接）。
+            return new FilterInputStream(object.getObjectContent()) {
+                @Override
+                public void close() throws IOException {
+                    try {
+                        super.close();
+                    } finally {
+                        shutdownQuietly(owned);
+                    }
+                }
+            };
         } catch (OSSException e) {
             // NoSuchKey 属于"资源已不存在"，交给上层按既有口径处理
             if (isNoSuchKey(e)) {
@@ -111,37 +127,45 @@ public class OssStorageService implements StorageService {
             throw ossUnavailable("读取失败：" + e.getMessage(), e);
         } catch (ClientException e) {
             throw ossUnavailable("读取失败：" + e.getMessage(), e);
+        } finally {
+            if (!handedOff) {
+                shutdownQuietly(client);
+            }
         }
     }
 
     @Override
     public boolean exists(String storageKey) {
-        OSS verificationClient = null;
+        OSS client = null;
         try {
-            verificationClient = verificationClient(storageKey);
-            return verificationClient.doesObjectExist(ossProperties.getBucket(), storageKey);
+            client = clientFor(credentialIssuer.issueForRead(storageKey));
+            return client.doesObjectExist(ossProperties.getBucket(), storageKey);
         } catch (OSSException | ClientException e) {
             throw ossUnavailable("探测失败：" + e.getMessage(), e);
         } finally {
-            closeVerificationClient(verificationClient);
+            shutdownQuietly(client);
         }
     }
 
     @Override
     public void delete(String storageKey) throws IOException {
+        OSS client = null;
         try {
-            client().deleteObject(ossProperties.getBucket(), storageKey);
+            client = clientFor(credentialIssuer.issueForDelete(storageKey));
+            client.deleteObject(ossProperties.getBucket(), storageKey);
         } catch (OSSException | ClientException e) {
             throw ossUnavailable("删除失败：" + e.getMessage(), e);
+        } finally {
+            shutdownQuietly(client);
         }
     }
 
     @Override
     public long size(String storageKey) throws IOException {
-        OSS verificationClient = null;
+        OSS client = null;
         try {
-            verificationClient = verificationClient(storageKey);
-            ObjectMetadata metadata = verificationClient.getObjectMetadata(ossProperties.getBucket(), storageKey);
+            client = clientFor(credentialIssuer.issueForRead(storageKey));
+            ObjectMetadata metadata = client.getObjectMetadata(ossProperties.getBucket(), storageKey);
             if (metadata == null) {
                 throw new NoSuchFileException("存储键不存在：" + storageKey);
             }
@@ -154,7 +178,7 @@ public class OssStorageService implements StorageService {
         } catch (ClientException e) {
             throw ossUnavailable("读取元数据失败：" + e.getMessage(), e);
         } finally {
-            closeVerificationClient(verificationClient);
+            shutdownQuietly(client);
         }
     }
 
@@ -165,19 +189,25 @@ public class OssStorageService implements StorageService {
 
     @Override
     public Optional<String> presignedUrl(String storageKey, String downloadFileName, Duration ttl) {
+        OSS signer = null;
         try {
+            // 签名者必须自身具备 oss:GetObject，第三方才能凭该 URL 下载（阿里云明文规则）。
+            StsCredential credential = credentialIssuer.issueForRead(storageKey);
             GeneratePresignedUrlRequest request =
                     new GeneratePresignedUrlRequest(ossProperties.getBucket(), storageKey);
-            request.setExpiration(Date.from(Instant.now().plus(ttl)));
+            request.setExpiration(Date.from(signableExpiry(credential, ttl)));
             if (downloadFileName != null && !downloadFileName.isBlank()) {
                 // 直链下载时以签名参数覆盖文件名（对象键是不可读的 UUID）。
                 // ⚠️ SDK 3.17.x 无 setResponseContentDisposition，须用 addQueryParameter 透传 response-content-disposition。
                 request.addQueryParameter("response-content-disposition", buildContentDisposition(downloadFileName));
             }
-            URL url = client().generatePresignedUrl(request);
+            signer = clientFor(credential);
+            URL url = signer.generatePresignedUrl(request);
             return Optional.of(url.toString());
         } catch (OSSException | ClientException e) {
             throw ossUnavailable("签发下载地址失败：" + e.getMessage(), e);
+        } finally {
+            shutdownQuietly(signer);
         }
     }
 
@@ -188,43 +218,41 @@ public class OssStorageService implements StorageService {
 
     // ---------------- 内部 ----------------
 
-    /** 核实链路中长期 AK 仅用于向 STS 申请；查询 OSS 时携带临时凭据的 SecurityToken。 */
-    private OSS verificationClient(String storageKey) {
-        StsCredential credential = credentialIssuer.issueForVerification(storageKey);
+    /** 用临时凭证（含 SecurityToken）构造一次性客户端 —— **不携带任何长期密钥**。 */
+    private OSS clientFor(StsCredential credential) {
         return new OSSClientBuilder().build(ossProperties.getEndpoint(),
                 credential.accessKeyId(), credential.accessKeySecret(), credential.securityToken());
     }
 
-    private void closeVerificationClient(OSS verificationClient) {
-        if (verificationClient != null) {
+    private void shutdownQuietly(OSS client) {
+        if (client != null) {
             try {
-                verificationClient.shutdown();
+                client.shutdown();
             } catch (RuntimeException e) {
-                // 不让资源释放异常覆盖核实结果，也不记录可能含凭据的异常报文。
-                log.warn("[OSS] 关闭 STS 核实客户端异常");
+                // 不让资源释放异常覆盖业务结果，也不记录可能含凭据的异常报文。
+                log.warn("[OSS] 关闭临时凭据客户端异常");
             }
         }
     }
 
-    /** 懒加载单例客户端；未配置时给出明确错误（不建立连接） */
-    private OSS client() {
-        OSS c = client;
-        if (c == null) {
-            synchronized (this) {
-                c = client;
-                if (c == null) {
-                    if (!ossProperties.configured()) {
-                        throw new BusinessException(Code.STORAGE_OSS_UNAVAILABLE, "对象存储未配置");
-                    }
-                    c = new OSSClientBuilder().build(
-                            ossProperties.getEndpoint(),
-                            ossProperties.getAccessKeyId(),
-                            ossProperties.getAccessKeySecret());
-                    client = c;
-                }
-            }
+    /**
+     * 签名 URL 的过期时间 = min(请求 ttl, 临时凭证剩余有效期 − 安全边界)。
+     * 阿里云规则：STS 凭证与签名 URL 同时设置有效期时，以**最小者**为准。
+     */
+    private Instant signableExpiry(StsCredential credential, Duration ttl) {
+        Instant now = Instant.now();
+        Instant wanted = now.plus(ttl);
+        Instant cap;
+        try {
+            cap = Instant.parse(credential.expiration()).minus(CREDENTIAL_SAFETY_MARGIN);
+        } catch (DateTimeParseException | NullPointerException e) {
+            cap = now; // 无法判定凭证有效期 → 视为不足，走下方报错
         }
-        return c;
+        Instant effective = wanted.isBefore(cap) ? wanted : cap;
+        if (!effective.isAfter(now)) {
+            throw ossUnavailable("临时凭证剩余有效期不足，无法签发下载地址", null);
+        }
+        return effective;
     }
 
     private BusinessException ossUnavailable(String detail, Throwable cause) {

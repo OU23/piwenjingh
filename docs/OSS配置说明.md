@@ -202,7 +202,9 @@
         "oss:UploadPart",
         "oss:CompleteMultipartUpload",
         "oss:AbortMultipartUpload",
-        "oss:ListParts"
+        "oss:ListParts",
+        "oss:GetObject",
+        "oss:DeleteObject"
       ],
       "Resource": ["acs:oss:*:*:<Bucket名>/tools/*"]
     }
@@ -210,8 +212,10 @@
 }
 ```
 
-- ⚠️ **刻意不给** `oss:GetObject` / `oss:DeleteObject` —— 读与删仍走后端（后端签发 URL / 后端删对象）。
-  这样即使浏览器拿到的临时凭证被滥用，也**读不到、删不掉**任何文件。
+- **前 6 个 = 上传**（浏览器直传用）；**末尾 2 个**（`oss:GetObject` / `oss:DeleteObject`）= **后端**「读 / 删」用
+  （内容读取、下载签名、存在性与大小核实要 `Get`；OSS 落点文件彻底删除要 `Delete`）。
+  ⚠️ **2026-10-16 起后端也走 STS 临时凭证**，这两个**必须给** —— 只给上传会出现"**上传正常、下载/删除 403 `bucket acl`**"。
+  （浏览器拿到的临时凭证另有**独立会话策略**限制为仅 6 个上传动作，所以**读不到、删不掉**任何文件。）
 - ⚠️ 资源只到 **`tools/*`**（正是本系统对象键的前缀），别的目录碰不到。
 - 角色详情「**基本信息**」里可调 **最大会话时间**：默认 **3600 秒**。若你想把 `OSS_STS_DURATION_SECONDS` 设成大于 3600（如 7200），**必须先把这里调到 ≥ 该值**（上限 43200），否则 `AssumeRole` 会失败。用默认 3600 则不用动。
 
@@ -403,14 +407,14 @@ mvn spring-boot:run "-Dspring-boot.run.profiles=dev"   # ⚠️ PowerShell 下�
 
 | 步骤 | 做什么 |
 | --- | --- |
-| 6 | **用一个 RAM 用户（子账号）**，给它挂**两样**：① 桶权限（对象级 8 个动作，资源 `acs:oss:*:*:<bucket>/*` —— 挂上它，"直连 OSS"那部分也能用同一把 AK 跑）；② **`sts:AssumeRole`**（资源指向下面那个角色 ARN）。记下它的 AK / Secret |
+| 6 | **用一个 RAM 用户（子账号）**，给它挂**两样**：① 桶权限（对象级 8 个动作，资源 `acs:oss:*:*:<bucket>/*` —— 主要供探针 / 兜底排查；2026-10-16 后后端不再直连，对象操作走下面的角色）；② **`sts:AssumeRole`**（资源指向下面那个角色 ARN）。记下它的 AK / Secret |
 | 7 | RAM → 创建角色：信任主体类型选**云账号** → 建好后**把「信任策略」改窄为指定的那个 RAM 用户**：`{"RAM": ["acs:ram::<账号ID>:user/<子账号登录名>"]}` —— 控制台默认给的是账号根 `:root`（= 账号下所有身份都能扮演），**收窄这一步就是"更安全"的做法**，也是管理员建议的正解 |
-| 8 | 给该角色挂策略：`acs:oss:*:*:<bucket>/tools/*` 上的 6 个上传动作（`PutObject` / `InitiateMultipartUpload` / `UploadPart` / `CompleteMultipartUpload` / `AbortMultipartUpload` / `ListParts`），**刻意不给 `GetObject` / `DeleteObject`** |
+| 8 | 给该角色挂策略：`acs:oss:*:*:<bucket>/tools/*` 上的 **6 个上传动作 + `oss:GetObject` + `oss:DeleteObject`**（`PutObject` / `InitiateMultipartUpload` / `UploadPart` / `CompleteMultipartUpload` / `AbortMultipartUpload` / `ListParts` / **`GetObject`** / **`DeleteObject`**）—— ⚠️ **2026-10-16 起后端也走 STS，`Get`/`Delete` 必须给**（旧版刻意不给，那是"后端用长期 AK 直连"时代的做法） |
 | 9 | 环境变量**换成子账号 AK**，再加 `OSS_STS_ROLE_ARN=acs:ram::<账号ID>:role/<角色名>` + `TOOLBOX_STORAGE_TYPE=oss`；CORS 里加 `http://localhost:5173` → 重启 |
 | 10 | 上传文件 → F12 应看到请求**直接打向 OSS 域名**；该版本落点 `storage_backend='oss'` |
 
-> 换成子账号 AK 后**重跑一次探针**，期望：① `AssumeRole` ✅、② `Put / Get / Delete` ✅、③ 角色 `Put` ✅
-> （③ 的 `Delete` 会是 ❌ —— **设计如此**，角色刻意不给删；探针里已标注是预期）。
+> 换成子账号 AK 后**重跑一次探针**，期望：① `AssumeRole` ✅、② `Put / Get / Delete` ✅、③ 角色 **`Put` ✅ / `Get` ✅ / `Delete` ✅**
+> （若 ③ 的 `Delete` 为 ❌ ⇒ 角色权限漏了 `oss:DeleteObject`，后端将删不掉 OSS 落点文件）。
 
 **⚠️ 为什么信任主体要收窄到 RAM 用户（而不是账号根）**
 
@@ -517,13 +521,15 @@ mvn spring-boot:run "-Dspring-boot.run.profiles=dev"   # ⚠️ PowerShell 下�
 👉 **交付物：AccessKey ID + AccessKey Secret**
 
 **② 建「上传专用 RAM 角色」**（照 §2.3）：信任主体 = **云账号（当前账号）**，
-信任策略收窄到 `toolbox-backend`，权限挂 **策略 B**（只给写、只到 `tools/*`）。
+信任策略收窄到 `toolbox-backend`，权限挂 **策略 B**（写 + 读 + 删，资源限 `tools/*`）。
 👉 **交付物：角色 ARN**（`acs:ram::<主账号ID>:role/oss-uploader-role`）
 
 > **给管理员的安全说明（可直接转发）**：
 > 这两个凭据**只用于服务器环境变量**，不进代码库、不入数据库、不出现在前端；
-> 角色**刻意不给** `oss:GetObject` / `oss:DeleteObject`，资源也只限 `<bucket>/tools/*`，
-> 即"就算临时凭证泄露，也读不到、删不掉任何文件"。后端用户另需 `oss:GetObject`（用于签发下载直链）。
+> 角色权限限 **`<bucket>/tools/*`**，其中**读 / 删动作仅由后端使用**（浏览器拿到的临时凭证另有**独立会话策略**，只含 6 个上传动作），
+> 即"就算浏览器凭证泄露，也读不到、删不掉任何文件"。
+> ⚠️ **2026-10-16 起**：后端**全部对象操作**都改用 STS 临时凭证 ⇒ 角色的权限策略**必须含 `oss:GetObject` + `oss:DeleteObject`**，
+> 否则会出现"上传正常、但下载 / 删除报 403 `bucket acl`"。
 
 ### 有两条路可选（管理员二选一）
 
@@ -600,8 +606,8 @@ python oss-probe.py
 | --- | --- | --- |
 | ⓪ `GetCallerIdentity` | **长期 AK** | **这把 AK 到底是谁**（账号 ID / 用户 ARN / **RAM 用户 UID**）—— 桶策略的 `Principal` 就填这个 UID |
 | ① `STS AssumeRole` | **长期 AK** | AK 是否有效、有没有 `sts:AssumeRole`、角色信任策略是否包含它 |
-| ② `Put / Get / Delete` | **长期 AK** | 后端访问桶是否有权限（**后端侧**：complete 的 HEAD、下载签名、迁移、删除） |
-| ③ `Put / Get / Delete` | **STS 临时凭证** | 浏览器直传那个角色是否有权限（**浏览器侧**） |
+| ② `Put / Get / Delete` | **长期 AK** | 这把 AK **自身**对桶的对象级权限。⚠️ 2026-10-16 后后端**不再用它直连**，此步仅作排查/兜底 |
+| ③ `Put / Get / Delete` | **STS 临时凭证** | **角色的权限** —— 后端（读 / 写 / 删）与浏览器直传**都**用它。**当前最该看的一步**：`Get` / `Delete` 为 ❌ ⇒ 角色缺 `oss:GetObject` / `oss:DeleteObject`，会直接导致下载/删除 403 |
 
 **读什么、写什么**：
 - 配置**全部从环境变量读**（`OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` / `OSS_BUCKET` / `OSS_ENDPOINT` / `OSS_STS_ROLE_ARN` / `OSS_STS_ENDPOINT`），**脚本内不存任何密钥**，输出里 AK 也是打码的；
