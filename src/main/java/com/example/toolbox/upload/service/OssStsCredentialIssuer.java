@@ -17,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.time.Clock;
 
 /**
  * STS 临时凭证签发（M-23 / B14 / 方案 §5.3）。
@@ -24,7 +25,7 @@ import java.util.List;
  * <p>直传的「受控例外」就落在这里（契约 §9.5 / 方案 §2.3）—— 把 <b>长期 AK/SK 下发到前端</b>是被禁止的，
  * 允许的是**后端鉴权后**签发的「短时效 + 限前缀 + 限动作」临时凭证。
  *
- * <p><b>三条硬约束</b>：
+ * <p><b>浏览器上传凭证的三条硬约束</b>：
  * <ol>
  *   <li>内联会话策略的 {@code Resource} **必须**限定为 {@code <bucket>/tools/<deptId>/*}（不得 {@code *}）；</li>
  *   <li>{@code Action} **只给上传所需** —— 不含 {@code GetObject} / {@code DeleteObject}
@@ -63,6 +64,8 @@ public class OssStsCredentialIssuer {
     /** 单例客户端（懒加载，线程安全） */
     private volatile IAcsClient client;
 
+    private final StsCredentialCache credentialCache = new StsCredentialCache(Clock.systemUTC(), 1024);
+
     /**
      * 启动校验：仅当写入后端 = oss（即启用直传）时要求 `sts-role-arn`，**启动即失败**（可预期的运维配置错误）。
      * `type=local` 时**不校验** —— 直传是可选能力，不得因缺 STS 配置而拒绝启动（E-02）。
@@ -84,15 +87,41 @@ public class OssStsCredentialIssuer {
      * @throws BusinessException {@link Code#STORAGE_OSS_UNAVAILABLE}（2006）当 STS 不可用 / 返回不完整
      */
     public StsCredential issue(long userId, Long deptId) {
+        return assumeRole("toolbox-" + userId, buildSessionPolicy(deptId));
+    }
+
+    /** 后端专用核实凭证：复用同一角色，仅允许读取指定对象，绝不下发给浏览器。 */
+    public StsCredential issueForVerification(String objectKey) {
+        // Resource 中的通配符会扩大授权范围，控制字符也不允许进入策略 JSON。
+        if (isBlank(objectKey) || objectKey.indexOf('*') >= 0 || objectKey.indexOf('?') >= 0
+                || objectKey.chars().anyMatch(Character::isISOControl)) {
+            throw new BusinessException(Code.PARAM_INVALID, "对象键非法");
+        }
+        String resource = "acs:oss:*:*:" + ossProperties.getBucket() + "/" + objectKey;
+        String policy = "{\"Version\":\"1\",\"Statement\":[{\"Effect\":\"Allow\","
+                + "\"Action\":[\"oss:GetObject\"],\"Resource\":[\"" + jsonEscape(resource) + "\"]}]}";
+        return assumeRole("toolbox-verification", policy);
+    }
+
+    private StsCredential assumeRole(String sessionName, String policy) {
+        return credentialCache.get(sessionName, policy, () -> requestCredential(sessionName, policy));
+    }
+
+    private StsCredential requestCredential(String sessionName, String policy) {
         AssumeRoleRequest request = new AssumeRoleRequest();
         request.setSysEndpoint(ossProperties.getStsEndpoint());
         request.setRoleArn(ossProperties.getStsRoleArn());
-        request.setRoleSessionName("toolbox-" + userId);
+        request.setRoleSessionName(sessionName);
         request.setDurationSeconds(ossProperties.stsDurationSecondsOrDefault());
-        request.setPolicy(buildSessionPolicy(deptId));
+        request.setPolicy(policy);
 
         try {
-            AssumeRoleResponse response = client().getAcsResponse(request);
+            IAcsClient sts = client();
+            AssumeRoleResponse response;
+            // V1 STS 客户端有共享状态，浏览器签发与后端核实共用时串行调用。
+            synchronized (sts) {
+                response = sts.getAcsResponse(request);
+            }
             AssumeRoleResponse.Credentials c = response == null ? null : response.getCredentials();
             if (c == null || isBlank(c.getAccessKeyId()) || isBlank(c.getAccessKeySecret())
                     || isBlank(c.getSecurityToken())) {
@@ -103,7 +132,7 @@ public class OssStsCredentialIssuer {
         } catch (ClientException e) {
             // ⚠️ 只记错误码 / RequestId，绝不记凭证
             log.warn("[STS] AssumeRole 失败 code={} requestId={}", e.getErrCode(), e.getRequestId());
-            throw ossUnavailable("签发直传凭证失败", e);
+            throw ossUnavailable("签发临时凭证失败", e);
         }
     }
 

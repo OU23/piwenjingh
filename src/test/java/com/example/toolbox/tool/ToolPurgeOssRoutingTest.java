@@ -13,9 +13,12 @@ import com.example.toolbox.tool.entity.ToolVersionDO;
 import com.example.toolbox.tool.service.ToolPurgeService;
 import com.example.toolbox.tool.service.ToolTrashService;
 import com.example.toolbox.tool.service.ToolWriteService;
+import com.example.toolbox.upload.service.OssStsCredentialIssuer;
+import com.example.toolbox.upload.service.StsCredential;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -66,16 +69,21 @@ class ToolPurgeOssRoutingTest extends IntegrationTestBase {
     private ToolPurgeService toolPurgeService;
     @Autowired
     private ToolTrashService toolTrashService;
+    @MockBean
+    private OssStsCredentialIssuer credentialIssuer;
 
     @Test
     void purgeDeletesObjectFromOssWhenBackendIsOss() {
         loginAs(1L, "admin", 1L, PermissionCode.TOOL_DELETE);
+        when(credentialIssuer.issueForVerification(anyString())).thenReturn(
+                new StsCredential("STS-ak", "STS-sk", "STS-token", "2026-10-16T12:00:00Z"));
 
         OSS[] captured = new OSS[1];
         try (var ignored = mockConstruction(OSSClientBuilder.class, (builder, context) -> {
             OSS oss = mock(OSS.class);
             when(oss.doesObjectExist(anyString(), anyString())).thenReturn(true);
             when(builder.build(anyString(), anyString(), anyString())).thenReturn(oss);
+            when(builder.build(anyString(), anyString(), anyString(), anyString())).thenReturn(oss);
             captured[0] = oss;
         })) {
             String fileKey = "tools/1/test-oss-file.zip";
@@ -90,6 +98,7 @@ class ToolPurgeOssRoutingTest extends IntegrationTestBase {
             dto.setFileSize(8L);
 
             var result = toolWriteService.create(dto);
+            verify(credentialIssuer).issueForVerification(fileKey);
 
             // ① 落点字段必须随写入后端记为 oss（回退修复前会落为 local）
             ToolVersionDO v = toolVersionMapper.selectOne(

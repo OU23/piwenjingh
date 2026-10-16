@@ -54,6 +54,8 @@ toolbox:
     # ---- 直传临时凭证（M-23 / B14）----
     # ⚠️ storage.type=oss 时 sts-role-arn 必填，否则启动即失败；type=local 时不校验。
     sts-role-arn: ${OSS_STS_ROLE_ARN:}
+    # 同一角色也用于后端 exists/size 的 STS 核实，角色需有 tools/* 的 oss:GetObject 权限。
+    # 浏览器会话策略仍仅允许上传；后端核实策略限定单个对象，详见 docs/OSS-STS核实说明.md。
     # 临时凭证有效期（秒），区间 900 ~ 43200；越界按默认 3600 处理
     sts-duration-seconds: ${OSS_STS_DURATION_SECONDS:3600}
     sts-endpoint: ${OSS_STS_ENDPOINT:sts.aliyuncs.com}

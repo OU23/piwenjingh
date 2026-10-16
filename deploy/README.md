@@ -7,10 +7,24 @@
 1. 将完整项目源码上传至服务器，并保留 `deploy/` 与 `src/` 的相对目录关系。
 2. 安装 JDK 17、Maven 3.9+、Docker Engine 和 Docker Compose v2；`build-up.sh` 会在宿主机使用 Maven 打包，因此可复用宿主机的 Maven 镜像与依赖缓存。
 3. 创建线上 MySQL 数据库与业务账号，并允许该服务器访问。
-4. 编辑 `deploy/docker-compose.yml`，替换全部 `REPLACE_*` 配置值：数据库库名、账号、密码及不少于 32 个字符的 JWT 密钥。宿主机 MySQL 保持使用 `host.docker.internal`。
+4. 首次部署时复制 `deploy/.env.example` 为 `deploy/.env`（已有文件请直接编辑，勿覆盖），填写 `SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD`。宿主机 MySQL 保持使用 `host.docker.internal`。在 `deploy/docker-compose.yml` 中配置不少于 32 个字符的 JWT 密钥。
 5. 确保部署用户可创建和写入 `/opt/toolbox/uploads`。该目录保存正式文件和上传分片，必须纳入备份。
 
-数据库密码和 JWT 密钥会按当前部署要求直接保存在 Compose 文件中。请将该文件视作敏感配置，避免提交到公开仓库、日志、截图或工单。
+数据库连接从 `deploy/.env` 读取，三项均为必填，缺失时 Compose 会直接报错。密码建议使用单引号包裹，避免 `$` 等字符被插值。JWT 密钥仍保存在 Compose 文件中，请将这两个文件视作敏感配置，避免泄露到公开仓库、日志、截图或工单。
+
+### OSS 与 STS 配置
+
+Compose 的 `environment` 已包含应用支持的全部 OSS、STS 环境变量。若尚未创建 `deploy/.env`，在项目根目录执行：
+
+```bash
+cp deploy/.env.example deploy/.env
+```
+
+在 `deploy/.env` 中填写 `OSS_ENDPOINT`（公网地址）、`OSS_BUCKET`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET` 和 `OSS_STS_ROLE_ARN`，填齐后将 `TOOLBOX_STORAGE_TYPE` 改为 `oss`。默认值为 `local`；启用 `oss` 后缺少必要配置会导致应用启动失败。
+
+下载签名有效期 `OSS_URL_TTL_SECONDS`、STS 凭证有效期 `OSS_STS_DURATION_SECONDS` 默认均为 3600 秒；STS 有效期范围为 900～43200 秒。`OSS_STS_ENDPOINT` 默认是 `sts.aliyuncs.com`。临时凭证由应用运行时申请，无需写入 Compose。
+
+部署脚本会读取 Compose 同目录下的 `.env`；该文件已被 Git 忽略，不要提交真实密钥。修改配置后执行 `./deploy/scripts/restart.sh` 重新创建容器使其生效。
 
 ## 2. 数据库人工初始化
 

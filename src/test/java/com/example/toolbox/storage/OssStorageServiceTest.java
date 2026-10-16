@@ -9,6 +9,8 @@ import com.aliyun.oss.model.OSSObject;
 import com.aliyun.oss.model.ObjectMetadata;
 import com.example.toolbox.common.exception.BusinessException;
 import com.example.toolbox.common.result.Code;
+import com.example.toolbox.upload.service.OssStsCredentialIssuer;
+import com.example.toolbox.upload.service.StsCredential;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -34,6 +36,8 @@ import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.never;
 
 /**
  * OSS 存储实现（M-22 / B13 验收 A2 · A3 · A14 · A16 · C8）。
@@ -59,6 +63,7 @@ class OssStorageServiceTest {
     private StorageProperties storageProps;
     private OSS oss;
     private OssStorageService service;
+    private OssStsCredentialIssuer issuer;
 
     @BeforeEach
     void setUp() {
@@ -70,13 +75,60 @@ class OssStorageServiceTest {
 
         storageProps = new StorageProperties();
         oss = mock(OSS.class);
-        service = new OssStorageService(props, storageProps);
+        issuer = mock(OssStsCredentialIssuer.class);
+        when(issuer.issueForVerification(anyString())).thenReturn(
+                new StsCredential("STS-ak", "STS-sk", "STS-token", "2026-10-16T12:00:00Z"));
+        service = new OssStorageService(props, storageProps, issuer);
     }
 
     /** 桩住客户端构造：{@code new OSSClientBuilder().build(endpoint, ak, sk)} → 返回 mock 客户端 */
     private org.mockito.MockedConstruction<OSSClientBuilder> stubClient() {
         return mockConstruction(OSSClientBuilder.class,
-                (builder, context) -> when(builder.build(anyString(), anyString(), anyString())).thenReturn(oss));
+                (builder, context) -> {
+                    when(builder.build(anyString(), anyString(), anyString())).thenReturn(oss);
+                    when(builder.build(anyString(), anyString(), anyString(), anyString())).thenReturn(oss);
+                });
+    }
+
+    @Test
+    void verificationUsesFreshStsWithTokenAndClosesClients() throws Exception {
+        ObjectMetadata metadata = new ObjectMetadata();
+        metadata.setContentLength(128);
+        when(oss.doesObjectExist(BUCKET, "tools/1/file.zip")).thenReturn(true);
+        when(oss.getObjectMetadata(BUCKET, "tools/1/file.zip")).thenReturn(metadata);
+        try (var builders = stubClient()) {
+            assertTrue(service.exists("tools/1/file.zip"));
+            assertEquals(128, service.size("tools/1/file.zip"));
+            verify(issuer, times(2)).issueForVerification("tools/1/file.zip");
+            assertEquals(2, builders.constructed().size());
+            for (OSSClientBuilder builder : builders.constructed()) {
+                verify(builder).build(props.getEndpoint(), "STS-ak", "STS-sk", "STS-token");
+                verify(builder, never()).build(anyString(), anyString(), anyString());
+            }
+            verify(oss, times(2)).shutdown();
+        }
+    }
+
+    @Test
+    void verificationFailureClosesClientAndDoesNotFallbackToLongTermKey() {
+        when(oss.doesObjectExist(BUCKET, "k")).thenThrow(new ClientException("denied"));
+        try (var builders = stubClient()) {
+            assertOssUnavailable(() -> service.exists("k"));
+            verify(oss).shutdown();
+            assertEquals(1, builders.constructed().size());
+            verify(builders.constructed().get(0), never()).build(anyString(), anyString(), anyString());
+        }
+    }
+
+    @Test
+    void stsFailureDoesNotCreateOssClient() {
+        when(issuer.issueForVerification("k")).thenThrow(
+                new BusinessException(Code.STORAGE_OSS_UNAVAILABLE, "对象存储暂不可用"));
+        try (var builders = stubClient()) {
+            assertOssUnavailable(() -> service.exists("k"));
+            assertOssUnavailable(() -> service.size("k"));
+            assertTrue(builders.constructed().isEmpty());
+        }
     }
 
     // ---------------- A3 写入元数据 ----------------
@@ -181,7 +233,10 @@ class OssStorageServiceTest {
     /** 未配置凭据时调用 → 2006（**不建立连接**、不抛 NPE），保证"没配 OSS 也能跑" */
     @Test
     void unconfiguredOssReportsUnavailableWithoutConnecting() {
-        OssStorageService unconfigured = new OssStorageService(new OssProperties(), new StorageProperties());
+        OssProperties empty = new OssProperties();
+        StorageProperties local = new StorageProperties();
+        OssStorageService unconfigured = new OssStorageService(empty, local,
+                new OssStsCredentialIssuer(empty, local));
 
         BusinessException ex = assertThrows(BusinessException.class, () -> unconfigured.exists("k"));
         assertEquals(Code.STORAGE_OSS_UNAVAILABLE, ex.getCode());
@@ -245,7 +300,7 @@ class OssStorageServiceTest {
     @Test
     void ossTypeWithIncompleteConfigFailsFastAtStartup() {
         storageProps.setType("oss");
-        OssStorageService broken = new OssStorageService(new OssProperties(), storageProps);
+        OssStorageService broken = new OssStorageService(new OssProperties(), storageProps, issuer);
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, broken::validateConfiguration,
                 "写入后端已设为 oss 却没配凭据 → 必须启动即失败，不允许带病启动");
@@ -255,7 +310,7 @@ class OssStorageServiceTest {
     @Test
     void localTypeDoesNotRequireOssConfig() {
         storageProps.setType("local");
-        OssStorageService ok = new OssStorageService(new OssProperties(), storageProps);
+        OssStorageService ok = new OssStorageService(new OssProperties(), storageProps, issuer);
 
         assertDoesNotThrow(ok::validateConfiguration,
                 "OSS 是可选能力：未配置时不得影响启动（E-02）");

@@ -20,6 +20,7 @@ import com.example.toolbox.upload.dto.UploadDirectCredentialDTO;
 import com.example.toolbox.upload.service.OssStsCredentialIssuer;
 import com.example.toolbox.upload.service.UploadDirectService;
 import com.example.toolbox.upload.vo.UploadCredentialVO;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -83,7 +84,7 @@ class UploadDirectCredentialTest {
         credentials.setAccessKeyId("STS-ak");
         credentials.setAccessKeySecret("STS-sk");
         credentials.setSecurityToken("STS-token");
-        credentials.setExpiration("2026-10-13T09:30:00Z");
+        credentials.setExpiration(java.time.Instant.now().plusSeconds(3600).toString());
         response.setCredentials(credentials);
 
         construction = mockConstruction(DefaultAcsClient.class, (mock, context) ->
@@ -147,6 +148,53 @@ class UploadDirectCredentialTest {
     }
 
     // ---------------- A3 策略限前缀 ----------------
+
+    @Test
+    void repeatedRequestsReuseStsWithoutMixingUploadAndVerification() throws Exception {
+        var issuer = new OssStsCredentialIssuer(ossProps, storageProps);
+        var upload = issuer.issue(42L, DEPT_ID);
+        assertTrue(upload == issuer.issue(42L, DEPT_ID));
+        var verification = issuer.issueForVerification(OWN_KEY);
+        assertTrue(verification == issuer.issueForVerification(OWN_KEY));
+        assertFalse(upload == verification);
+        verify(construction.constructed().get(0), org.mockito.Mockito.times(2))
+                .getAcsResponse(any(AssumeRoleRequest.class));
+    }
+
+    @Test
+    void verificationStsUsesSameRoleButOnlyReadsExactObject() throws Exception {
+        var credential = new OssStsCredentialIssuer(ossProps, storageProps).issueForVerification(OWN_KEY);
+        AssumeRoleRequest request = capturedRequest();
+        assertEquals(ossProps.getStsRoleArn(), request.getRoleArn());
+        assertEquals("toolbox-verification", request.getRoleSessionName());
+        var statement = new ObjectMapper().readTree(request.getPolicy()).get("Statement").get(0);
+        assertEquals("oss:GetObject", statement.get("Action").get(0).asText());
+        assertEquals(1, statement.get("Action").size());
+        assertEquals("acs:oss:*:*:toolbox-files/" + OWN_KEY,
+                statement.get("Resource").get(0).asText());
+        assertEquals(1, statement.get("Resource").size());
+        assertEquals("STS-token", credential.securityToken());
+    }
+
+    @Test
+    void verificationRejectsWildcardKeysBeforeCallingSts() {
+        var issuer = new OssStsCredentialIssuer(ossProps, storageProps);
+        for (String key : List.of("tools/*", "tools/?", "tools/\nfile", "")) {
+            BusinessException ex = assertThrows(BusinessException.class,
+                    () -> issuer.issueForVerification(key));
+            assertEquals(Code.PARAM_INVALID, ex.getCode());
+        }
+        assertTrue(construction.constructed().isEmpty());
+    }
+
+    @Test
+    void verificationStsFailureRemains2006() {
+        failure = new ClientException("Forbidden", "not authorized", "request-verify");
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> new OssStsCredentialIssuer(ossProps, storageProps).issueForVerification(OWN_KEY));
+        assertEquals(Code.STORAGE_OSS_UNAVAILABLE, ex.getCode());
+        assertEquals(200, ex.getCode().getHttpStatus());
+    }
 
     @Test
     void sessionPolicyRestrictsResourceToOwnDeptPrefix() throws Exception {

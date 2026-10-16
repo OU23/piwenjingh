@@ -12,10 +12,20 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: prod
       TZ: Asia/Shanghai
-      # Replace every REPLACE_* value before the first production deployment.
-      SPRING_DATASOURCE_URL: "jdbc:mysql://host.docker.internal:3306/toolbox?useUnicode=true&characterEncoding=UTF-8&connectionTimeZone=Asia/Shanghai"
-      SPRING_DATASOURCE_USERNAME: "zj_toolbox"
-      SPRING_DATASOURCE_PASSWORD: "aLt%8@E!9J"
+      # OSS / STS：在 deploy/.env 中填写；启用 OSS 时将存储类型改为 oss。
+      TOOLBOX_STORAGE_TYPE: "${TOOLBOX_STORAGE_TYPE:-local}"
+      OSS_ENDPOINT: "${OSS_ENDPOINT:-}"
+      OSS_BUCKET: "${OSS_BUCKET:-}"
+      OSS_ACCESS_KEY_ID: "${OSS_ACCESS_KEY_ID:-}"
+      OSS_ACCESS_KEY_SECRET: "${OSS_ACCESS_KEY_SECRET:-}"
+      OSS_URL_TTL_SECONDS: "${OSS_URL_TTL_SECONDS:-3600}"
+      OSS_STS_ROLE_ARN: "${OSS_STS_ROLE_ARN:-}"
+      OSS_STS_DURATION_SECONDS: "${OSS_STS_DURATION_SECONDS:-3600}"
+      OSS_STS_ENDPOINT: "${OSS_STS_ENDPOINT:-sts.aliyuncs.com}"
+      # 数据库连接从 deploy/.env 读取；必填项缺失时 Compose 会报错。
+      SPRING_DATASOURCE_URL: "${SPRING_DATASOURCE_URL:?请在 deploy/.env 中填写 SPRING_DATASOURCE_URL}"
+      SPRING_DATASOURCE_USERNAME: "${SPRING_DATASOURCE_USERNAME:?请在 deploy/.env 中填写 SPRING_DATASOURCE_USERNAME}"
+      SPRING_DATASOURCE_PASSWORD: "${SPRING_DATASOURCE_PASSWORD:?请在 deploy/.env 中填写 SPRING_DATASOURCE_PASSWORD}"
       TOOLBOX_JWT_SECRET: "3f101b3c4f58e3f77e385904e7e7cfb3116976be955079a03c2087f7aaef6924"
     volumes:
       - /opt/toolbox/uploads/files:/data/files

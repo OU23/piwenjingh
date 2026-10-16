@@ -9,6 +9,8 @@ import com.aliyun.oss.model.OSSObject;
 import com.aliyun.oss.model.ObjectMetadata;
 import com.example.toolbox.common.exception.BusinessException;
 import com.example.toolbox.common.result.Code;
+import com.example.toolbox.upload.service.OssStsCredentialIssuer;
+import com.example.toolbox.upload.service.StsCredential;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +37,8 @@ import java.util.UUID;
  * 异常**一律转 {@link Code#STORAGE_OSS_UNAVAILABLE}（2006）**，不得抛到全局、不得 500；
  * OSS 故障时登录 / 检索 / 本地文件读写**不受影响**。
  *
- * <p><b>客户端生命周期</b>：{@link OSS} **单例 + 懒加载**（线程安全），进程退出时关闭。
+ * <p><b>客户端生命周期</b>：长期凭据客户端单例懒加载，进程退出时关闭；
+ * 存在性和大小核实使用单对象 STS（由签发器缓存并在到期前刷新），每次操作后关闭核实客户端。
  * 未配置时**不建立连接**（避免"配错就把服务拖挂"）。
  *
  * <p><b>原子性</b>：对象存储天然满足"内容完整后对象才可见"，无需临时文件。
@@ -47,6 +50,7 @@ public class OssStorageService implements StorageService {
 
     private final OssProperties ossProperties;
     private final StorageProperties storageProperties;
+    private final OssStsCredentialIssuer credentialIssuer;
 
     private volatile OSS client;
 
@@ -112,10 +116,14 @@ public class OssStorageService implements StorageService {
 
     @Override
     public boolean exists(String storageKey) {
+        OSS verificationClient = null;
         try {
-            return client().doesObjectExist(ossProperties.getBucket(), storageKey);
+            verificationClient = verificationClient(storageKey);
+            return verificationClient.doesObjectExist(ossProperties.getBucket(), storageKey);
         } catch (OSSException | ClientException e) {
             throw ossUnavailable("探测失败：" + e.getMessage(), e);
+        } finally {
+            closeVerificationClient(verificationClient);
         }
     }
 
@@ -130,8 +138,10 @@ public class OssStorageService implements StorageService {
 
     @Override
     public long size(String storageKey) throws IOException {
+        OSS verificationClient = null;
         try {
-            ObjectMetadata metadata = client().getObjectMetadata(ossProperties.getBucket(), storageKey);
+            verificationClient = verificationClient(storageKey);
+            ObjectMetadata metadata = verificationClient.getObjectMetadata(ossProperties.getBucket(), storageKey);
             if (metadata == null) {
                 throw new NoSuchFileException("存储键不存在：" + storageKey);
             }
@@ -143,6 +153,8 @@ public class OssStorageService implements StorageService {
             throw ossUnavailable("读取元数据失败：" + e.getMessage(), e);
         } catch (ClientException e) {
             throw ossUnavailable("读取元数据失败：" + e.getMessage(), e);
+        } finally {
+            closeVerificationClient(verificationClient);
         }
     }
 
@@ -175,6 +187,24 @@ public class OssStorageService implements StorageService {
     }
 
     // ---------------- 内部 ----------------
+
+    /** 核实链路中长期 AK 仅用于向 STS 申请；查询 OSS 时携带临时凭据的 SecurityToken。 */
+    private OSS verificationClient(String storageKey) {
+        StsCredential credential = credentialIssuer.issueForVerification(storageKey);
+        return new OSSClientBuilder().build(ossProperties.getEndpoint(),
+                credential.accessKeyId(), credential.accessKeySecret(), credential.securityToken());
+    }
+
+    private void closeVerificationClient(OSS verificationClient) {
+        if (verificationClient != null) {
+            try {
+                verificationClient.shutdown();
+            } catch (RuntimeException e) {
+                // 不让资源释放异常覆盖核实结果，也不记录可能含凭据的异常报文。
+                log.warn("[OSS] 关闭 STS 核实客户端异常");
+            }
+        }
+    }
 
     /** 懒加载单例客户端；未配置时给出明确错误（不建立连接） */
     private OSS client() {
