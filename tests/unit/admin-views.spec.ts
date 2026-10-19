@@ -27,6 +27,9 @@ const mocks = vi.hoisted(() => ({
   deleteTag: vi.fn(),
   listDeletedTools: vi.fn(),
   restoreTool: vi.fn(),
+  // 彻底删除 / 清空：仅需桩存在（本文件不逐一断言）
+  purgeTools: vi.fn(),
+  clearDeletedTools: vi.fn(),
   confirm: vi.fn(),
   error: vi.fn(),
   success: vi.fn(),
@@ -53,6 +56,8 @@ vi.mock('@/api/tag', () => ({
 vi.mock('@/api/tool', () => ({
   listDeletedTools: mocks.listDeletedTools,
   restoreTool: mocks.restoreTool,
+  purgeTools: mocks.purgeTools,
+  clearDeletedTools: mocks.clearDeletedTools,
   toolDownloadUrl: (id: string) => `/api/tools/${id}/download`,
 }));
 
@@ -213,9 +218,16 @@ describe('已删除工具', () => {
     expect(mocks.restoreTool).not.toHaveBeenCalled();
   });
 
-  it('无删除权限：不渲染恢复入口（A8）', async () => {
+  /**
+   * A8（**v1.21 行为变更**）：回收站对登录用户开放 —— 无 `tool:delete` 也能看到「恢复」；
+   * 但「彻底删除 / 清空」仍是管理动作，不渲染。
+   * （旧断言为"无 tool:delete 连恢复都不渲染"，随契约 v1.21 废弃：上传人要能自救误删版本。）
+   */
+  it('无删除权限：可恢复本人记录，但不渲染彻底删除/清空（A8，v1.21 行为变更）', async () => {
     const wrapper = await mountView(DeletedView, []);
 
-    expect(wrapper.findAll('button').some((item) => item.text() === '恢复')).toBe(false);
+    expect(wrapper.findAll('button').some((item) => item.text() === '恢复')).toBe(true);
+    expect(wrapper.findAll('button').some((item) => item.text() === '清空')).toBe(false);
+    expect(wrapper.findAll('button').some((item) => item.text() === '删除')).toBe(false);
   });
 });

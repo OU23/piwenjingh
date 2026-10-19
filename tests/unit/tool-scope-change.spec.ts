@@ -70,6 +70,7 @@ const TOOL: ToolVO = {
   scope: 'DEPT',
   tags: [{ id: '1', name: '数据处理' }],
   uploaderName: '张三',
+  uploaderId: '9',
   deptName: '研发部',
   fileSize: 2048,
   downloadCount: 7,

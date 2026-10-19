@@ -23,7 +23,8 @@ export const MENU: MenuGroup[] = [
     items: [
       { name: 'tool-list', title: '工具列表' },
       { name: 'tool-upload', title: '上传工具', permission: PERMISSION.TOOL_UPLOAD },
-      { name: 'tool-deleted', title: '已删除工具', permission: PERMISSION.TOOL_DELETE },
+      // v1.21：回收站入口不再要求 tool:delete（上传人本人要能进去恢复误删的版本）
+      { name: 'tool-deleted', title: '回收站' },
     ],
   },
   {

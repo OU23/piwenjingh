@@ -20,6 +20,8 @@ const TOOL_API = {
   migrateTask: (taskId: string) => `/api/tools/migrate-to-oss/${encodeURIComponent(taskId)}`,
   /** 工具侧授权入口（契约 v1.7 §9.8） */
   grants: (id: ID) => `/api/tools/${id}/grants`,
+  /** 版本级删除（契约 v1.22 §9.6：**物理删除、不可恢复**） */
+  version: (id: ID, versionId: ID) => `/api/tools/${id}/versions/${versionId}`,
 } as const;
 
 export interface TagBrief {
@@ -38,6 +40,8 @@ export interface ToolVO {
   scope: string;
   tags: TagBrief[];
   uploaderName: string;
+  /** 上传人 ID（v1.21）：用于按行判定"本人可删除/恢复" */
+  uploaderId: ID;
   deptName: string;
   fileSize: number;
   downloadCount: number;
@@ -83,11 +87,16 @@ export interface ToolNameCheckDTO {
 }
 
 export interface ToolNameCheckVO {
+  /** 当前登录人是否已有**未删除**的同名工具（v1.21：按上传人判定） */
   existed: boolean;
   toolId: ID | null;
   latestVersion: string | null;
-  /** 同名工具是否在可见范围内（本部门或 PUBLIC）：true 可追加版本，false 需改名（补充说明 N-01） */
+  /** 是否可追加为新版本（existed=true 时恒为 true） */
   canAppend: boolean;
+  /** 回收站里是否有「同上传人 + 同名」工具（v1.21） */
+  inTrash: boolean;
+  /** inTrash=true 时那个已删工具的 ID */
+  trashToolId: ID | null;
 }
 
 export interface ToolSaveDTO {
@@ -143,7 +152,12 @@ export function listToolVersions(id: ID): Promise<ToolVersionVO[]> {
   return get<ToolVersionVO[]>(TOOL_API.versions(id));
 }
 
-/** 同名检查：命中则前端阻止提交（临时关闭"同名转版本"，见 toolSubmit.ts 文件头注释） */
+/**
+ * 同名检查（契约 §9.4 v1.21）：按「名称 + 当前上传人」判定。
+ * - `existed=true` → 走"追加版本"；
+ * - `inTrash=true` → 提示"回收站已有同名工具：删除旧工具 / 恢复旧工具"；
+ * - 都不命中 → 正常新建。
+ */
 export function checkToolName(data: ToolNameCheckDTO): Promise<ToolNameCheckVO> {
   return post<ToolNameCheckVO>(TOOL_API.checkName, data);
 }
@@ -173,6 +187,14 @@ export function listDeletedTools(query: ToolListQuery): Promise<PageResult<ToolV
 
 export function restoreTool(id: ID): Promise<null> {
   return post<null>(TOOL_API.restore(id));
+}
+
+/**
+ * 删除单个历史版本（契约 v1.22：**物理删除、不可恢复**，不进回收站）。
+ * 不允许删最后一个版本（后端 `1005`）；删最新版时后端自动回退 `latest_*`。
+ */
+export function deleteToolVersion(id: ID, versionId: ID): Promise<null> {
+  return del<null>(TOOL_API.version(id, versionId));
 }
 
 /** 批量删除 / 彻底删除的入参（契约 v1.5 §9.6） */

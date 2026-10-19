@@ -6,13 +6,13 @@ import { fileExtFromName, type ToolMetaMode, type ToolMetaValues } from '@/utils
 /**
  * 上传完成后的落库提交（P3 T6）
  *
- * 同名规则（契约 §9.4 + `接口补充说明.md` N-01）：**名称全局唯一**（不区分部门）。
- * - 命中同名 → **一律阻止提交**（返回 `name-blocked`，前端提示改名、文件无需重传）。
- *   ⚠️ **临时偏离（2026-09-29）**：契约 N-01 原允许 `canAppend = true` 时**静默追加为新版本**；
- *   本期**关闭该分支**（避免不同功能的同名工具被误并为一个工具的版本历史），
- *   待版本管理实现后恢复。故 `canAppend` 当前仅作信息字段，不再决定分支。
- * - 版本模式（从工具详情进入）仍走追加版本接口。
+ * 同名规则（契约 §9.4 **v1.21**）：名称唯一性收窄到「上传人维度」，**同名转版本已恢复**。
+ * - `existed = true`（我自己的同名未删工具）→ 直接**追加为新版本**；
+ * - `inTrash = true`（回收站里有我的同名工具）→ 返回 `in-trash`，由页面提示
+ *   「删除旧工具 / 恢复旧工具」后再继续；
+ * - 都不命中 → 正常新建。
  *
+ * 别人的同名工具**不再命中**（GitHub 模式：同名不同人可并存）。
  * 三条路径必须由这里统一决定，页面不得自行判断。
  */
 
@@ -24,7 +24,16 @@ export type SubmitOutcome =
       versionId: ID;
     }
   | {
-      /** 名称已被占用（任何范围）：需改名后重新提交（文件无需重传） */
+      /** 回收站里已有同上传人同名工具：需先"删除旧工具"或"恢复旧工具"（v1.21） */
+      kind: 'in-trash';
+      toolId: ID | null;
+      latestVersion: string | null;
+    }
+  | {
+      /**
+       * @deprecated v1.21 起**不再产生**（同名转版本已恢复）。
+       * 保留类型以兼容既有页面分支；后续清理时可整体移除。
+       */
       kind: 'name-blocked';
       latestVersion: string | null;
     };
@@ -65,10 +74,16 @@ export async function submitTool(options: SubmitToolOptions): Promise<SubmitOutc
     return appendVersion(options.toolId, values, upload);
   }
 
-  // 新建：先查同名 → 命中即阻止（临时关闭"同名转版本"，见文件头注释）
+  // 新建：先查同名（按上传人）→ 命中则追加版本 / 提示回收站，否则新建
   const checked = await checkToolName({ name: values.name.trim() });
-  if (checked.existed) {
-    return { kind: 'name-blocked', latestVersion: checked.latestVersion ?? null };
+
+  // ① 我自己的同名未删工具 → 追加为新版本（v1.21 恢复的同名转版本）
+  if (checked.existed && checked.toolId) {
+    return appendVersion(checked.toolId, values, upload);
+  }
+  // ② 回收站里有我的同名工具 → 交由页面提示"删除旧工具 / 恢复旧工具"
+  if (checked.inTrash) {
+    return { kind: 'in-trash', toolId: checked.trashToolId ?? null, latestVersion: checked.latestVersion ?? null };
   }
 
   const created = await createTool({

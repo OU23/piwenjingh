@@ -27,7 +27,8 @@ const emit = defineEmits<{
 
 const userStore = useUserStore();
 
-const canDelete = computed(() => userStore.has(PERMISSION.TOOL_DELETE));
+/** 双权限管理员（`user:manage` + `user:grant`，AND） */
+const canManageAll = computed(() => userStore.has(PERMISSION.USER_MANAGE) && userStore.has(PERMISSION.USER_GRANT));
 const canGrant = computed(() => userStore.has(PERMISSION.USER_GRANT));
 /**
  * 「可见范围」入口显隐（契约 v1.15 / P15）：仅**同时持 `user:manage` + `user:grant`** 渲染。
@@ -35,6 +36,18 @@ const canGrant = computed(() => userStore.has(PERMISSION.USER_GRANT));
  * 显隐只是体验层，后端 `ToolWriteService.requireEditable` 才是权威（R5）。
  */
 const canChangeScope = computed(() => userStore.has(PERMISSION.USER_MANAGE) && userStore.has(PERMISSION.USER_GRANT));
+
+/**
+ * 按行判定「可删除」（契约 v1.21 §9.6）：上传人本人 或 双权限管理员 或 全局管理员。
+ * ⚠️ 不再由 `tool:delete` 控制 —— 该权限点只管"批量删 / 彻底删 / 清空"等管理动作。
+ */
+function canManageRow(row: ToolVO): boolean {
+  if (userStore.has(PERMISSION.SYS_SETTING) || canManageAll.value) {
+    return true;
+  }
+  const me = userStore.user?.userId;
+  return me != null && row.uploaderId != null && String(row.uploaderId) === String(me);
+}
 
 const MAX_VISIBLE_TAGS = 3;
 
@@ -58,6 +71,8 @@ function suggestedName(row: ToolVO): string {
     @selection-change="(rows: ToolVO[]) => emit('selection-change', rows)"
   >
     <el-table-column v-if="props.selectable" type="selection" width="46" />
+    <!-- M-24：上传人列置于名称之前（同名不同人靠此区分，GitHub 模式） -->
+    <el-table-column prop="uploaderName" label="上传人" width="110" show-overflow-tooltip />
     <el-table-column prop="name" label="名称" min-width="180" show-overflow-tooltip />
     <el-table-column prop="latestVersion" label="版本" width="90" />
     <el-table-column label="格式" width="90">
@@ -116,7 +131,7 @@ function suggestedName(row: ToolVO): string {
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <el-button v-if="canDelete" link type="danger" @click="emit('delete', row)">删除</el-button>
+          <el-button v-if="canManageRow(row)" link type="danger" @click="emit('delete', row)">删除</el-button>
         </div>
       </template>
     </el-table-column>

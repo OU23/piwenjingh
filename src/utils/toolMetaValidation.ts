@@ -96,3 +96,20 @@ export function fileExtFromName(fileName: string): string {
   const matched = /\.([A-Za-z0-9]+)$/.exec(fileName.trim());
   return matched?.[1] ? matched[1].toLowerCase() : '';
 }
+
+/**
+ * 从文件名推导**工具名称默认值**（M-24 / T13）：默认值可改，不改变任何校验规则。
+ *
+ * 规则：
+ * - 去掉**最后一个**扩展名（`数据清洗小工具.zip` → `数据清洗小工具`；`tool.tar.gz` → `tool.tar`）；
+ * - 去后缀后为空（如 `.gitignore`）→ 回退原文件名；
+ * - 超过名称上限则截断（避免"填完才报太长"）。
+ */
+export function nameFromFileName(fileName: string): string {
+  const raw = fileName.trim();
+  if (!raw) {
+    return '';
+  }
+  const base = raw.replace(/\.[A-Za-z0-9]+$/, '').trim();
+  return (base || raw).slice(0, TOOL_META_LIMITS.name);
+}

@@ -10,9 +10,12 @@ import { formatDateTime, formatFileSize } from '@/utils/format';
 import { normalizePageSize } from '@/utils/toolQuery';
 
 /**
- * 已删除工具（回收站，契约 §9.6 / v1.5）
- * - 恢复：软删除记录回到原状态（工具与全部版本）；
- * - 彻底删除 / 清空：**物理删除**（含磁盘文件），不可恢复。
+ * 回收站（契约 §9.6）。
+ *
+ * - 只有「删除整个工具」才进这里（v1.22：历史版本删除 = 物理删除，不进回收站）；
+ * - 恢复：软删除记录回到原状态（其现存版本一并回到可见状态）；
+ * - 彻底删除 / 清空：**物理删除**（本地文件一并删；OSS 为逻辑删除、保留对象），不可恢复；
+ * - 列表对登录用户开放（无 `tool:delete` 时后端只返回本人数据），彻底删/清空仍是管理动作。
  */
 const userStore = useUserStore();
 
@@ -26,7 +29,7 @@ const error = ref<string | null>(null);
 /** 当前多选行（用于批量彻底删除） */
 const selectedRows = ref<ToolVO[]>([]);
 
-/** 恢复 / 彻底删除 / 清空 同属 `tool:delete` 权限 */
+/** 彻底删除 / 清空 = 管理动作，仍按 `tool:delete` 显隐 */
 const canDelete = computed(() => userStore.has(PERMISSION.TOOL_DELETE));
 const filtering = computed(() => Boolean(keyword.value.trim()));
 const isEmpty = computed(() => !loading.value && !error.value && list.value.length === 0);
@@ -52,7 +55,7 @@ async function fetchList(): Promise<void> {
       await fetchList();
     }
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '已删除列表加载失败，请稍后重试';
+    error.value = cause instanceof Error ? cause.message : '回收站加载失败，请稍后重试';
     list.value = [];
     total.value = 0;
   } finally {
@@ -70,10 +73,11 @@ function handleReset(): void {
   handleSearch();
 }
 
+/** 恢复工具：其现存版本一并回到可见状态 */
 async function handleRestore(row: ToolVO): Promise<void> {
   try {
     await ElMessageBox.confirm(
-      `确定恢复「${row.name}」吗？该工具及其全部版本将回到原状态，并从本列表移除。`,
+      `确定恢复「${row.name}」吗？该工具及其现存版本将回到原状态，并从本列表移除。`,
       '恢复工具',
       { type: 'warning', confirmButtonText: '确定恢复', cancelButtonText: '取消' },
     );
@@ -86,7 +90,6 @@ async function handleRestore(row: ToolVO): Promise<void> {
     ElMessage.success(`「${row.name}」已恢复到工具列表`);
     await fetchList();
   } catch (cause) {
-    // 如"记录不存在 / 未删除"：展示后端原因，列表状态不变
     ElMessage.error(cause instanceof Error ? cause.message : '恢复失败，请稍后重试');
   }
 }
@@ -205,7 +208,7 @@ onMounted(() => {
       :loading="loading"
       :error="error"
       :empty="isEmpty"
-      :empty-text="filtering ? '没有匹配的已删除工具' : '已删除列表是空的'"
+      :empty-text="filtering ? '没有匹配的已删除工具' : '回收站是空的'"
       :empty-hint="filtering ? '试试更换关键词' : '在工具列表删除的工具会出现在这里，可随时恢复'"
       :empty-action-text="filtering ? '重置筛选' : ''"
       @retry="fetchList"
@@ -213,6 +216,7 @@ onMounted(() => {
     >
       <el-table :data="list" row-key="id" border stripe @selection-change="handleSelectionChange">
         <el-table-column v-if="canDelete" type="selection" width="46" />
+        <el-table-column prop="uploaderName" label="上传人" width="110" show-overflow-tooltip />
         <el-table-column prop="name" label="名称" min-width="180" show-overflow-tooltip />
         <el-table-column prop="latestVersion" label="版本" width="90" />
         <el-table-column label="格式" width="90">
@@ -228,9 +232,9 @@ onMounted(() => {
         <el-table-column label="最近更新时间" width="170">
           <template #default="{ row }">{{ formatDateTime(row.updateTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" :width="canDelete ? 150 : 90" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="canDelete" link type="primary" @click="handleRestore(row)">恢复</el-button>
+            <el-button link type="primary" @click="handleRestore(row)">恢复</el-button>
             <el-button v-if="canDelete" link type="danger" @click="handlePurge(row)">删除</el-button>
           </template>
         </el-table-column>

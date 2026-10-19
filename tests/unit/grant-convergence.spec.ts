@@ -78,6 +78,7 @@ function makeTool(id: string, name: string, scope: string, deptName: string): To
     scope,
     tags: [],
     uploaderName: '张三',
+    uploaderId: '9',
     deptName,
     fileSize: 1024,
     downloadCount: 0,

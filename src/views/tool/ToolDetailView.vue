@@ -65,12 +65,12 @@ async function handleSaveGrants(payload: { userIds: ID[] }): Promise<void> {
 }
 
 /**
- * 详情页「版本列表」开关：**暂时隐藏**（**不是删除** —— 组件、数据、接口都保留，便于后续恢复）。
+ * 详情页「版本列表」开关。
  *
- * 隐藏原因（2026-09-29 产品决定）：版本相关交互可能还有较多调整，且可能涉及权限口径，
- * 待需求明确后再恢复；届时把这里改回 `true` 即可（组件 `ToolVersionTable` 与接口数据均已就绪）。
+ * 2026-09-29 曾暂时隐藏（等待版本管理需求明确）；**2026-10-19（M-24 / 契约 v1.21）恢复展示**：
+ * 版本级删除 / 恢复已落地，历史版本重新对用户可见。
  */
-const SHOW_VERSION_LIST = false;
+const SHOW_VERSION_LIST = true;
 
 const suggestedName = computed(() => {
   if (!detail.value) {
@@ -110,6 +110,14 @@ async function fetchDetail(): Promise<void> {
   } finally {
     loading.value = false;
   }
+}
+
+/**
+ * 版本删除后的收敛（契约 v1.22 §9.6）：刷新详情即可 ——
+ * 后端**不允许删最后一个版本**（`1005`），因此工具不会因删版本而消失。
+ */
+async function handleVersionDeleted(): Promise<void> {
+  await fetchDetail();
 }
 
 function backToList(): void {
@@ -195,7 +203,13 @@ onUnmounted(() => {
 
       <div v-if="SHOW_VERSION_LIST" class="tb-card">
         <div class="tb-title">版本列表</div>
-        <ToolVersionTable :tool-id="detail.id" :versions="detail.versions" @downloaded="fetchDetail" />
+        <ToolVersionTable
+          :tool-id="detail.id"
+          :versions="detail.versions"
+          :uploader-id="detail.uploaderId"
+          @downloaded="fetchDetail"
+          @deleted="handleVersionDeleted"
+        />
       </div>
     </template>
 

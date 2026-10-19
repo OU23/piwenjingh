@@ -8,13 +8,16 @@ import UploadProgressPanel from '@/components/UploadProgressPanel.vue';
 import { UploadCanceledError, createFileIdentifier, type UploadProgress, type UploadResult, type UploadTask } from '@/api/chunkUpload';
 import type { TagVO } from '@/api/tag';
 import { submitTool } from '@/api/toolSubmit';
+import { purgeTools, restoreTool } from '@/api/tool';
 import type { ID } from '@/api/types';
 import { loadUploadContext } from '@/api/uploadContext';
 import type { UploadMode } from '@/api/uploadMode';
 import { createUploadTask } from '@/api/uploadTask';
+import { PERMISSION } from '@/constants/permissions';
 import { useUploadDraftStore, type PendingUpload } from '@/stores/uploadDraft';
+import { useUserStore } from '@/stores/user';
 import { formatFileSize } from '@/utils/format';
-import { fileExtFromName, type ToolMetaMode, type ToolMetaValues } from '@/utils/toolMetaValidation';
+import { fileExtFromName, nameFromFileName, type ToolMetaMode, type ToolMetaValues } from '@/utils/toolMetaValidation';
 import { STEPS, emptyProgress, type StepName } from './uploadSteps';
 
 /**
@@ -46,6 +49,7 @@ const submitError = ref('');
 const doneMessage = ref('');
 const toolName = ref('');
 const submittedToolId = ref<ID | null>(null);
+const userStore = useUserStore();
 /** 刷新时"上次上传未完成"的提示，仅在选择文件步骤展示 */
 const pendingUploadHint = ref<PendingUpload | null>(null);
 
@@ -85,7 +89,13 @@ async function startUpload(selected: File): Promise<void> {
   pickError.value = '';
   submitError.value = '';
   // 换了新文件：清掉上一个文件的填写遗留与提交错误（名称/简介/标签不跨文件携带）
-  metaInitial.value = null;
+  // ⚠️ 追加版本模式例外：名称 / 简介 / 可见范围等属**工具级**信息（来自时详情接口），
+  //    若一起清空，ToolMetaForm 的名称只读区会变成"—"，提交也会丢工具级预填。
+  if (mode.value === 'create') {
+    metaInitial.value = null;
+  } else {
+    metaInitial.value = { ...(metaInitial.value ?? {}) };
+  }
   uploadResult.value = null;
   resumedFrom.value = 0;
   paused.value = false;
@@ -124,7 +134,13 @@ async function startUpload(selected: File): Promise<void> {
   try {
     const result = await running.run();
     uploadResult.value = result;
-    metaInitial.value = { fileExt: fileExtFromName(result.fileName) };
+    metaInitial.value = {
+      // 保留原有字段（追加版本模式下 onMounted 已填入工具信息，不能被整体覆盖）
+      ...(metaInitial.value ?? {}),
+      // T13：新建模式用「去掉后缀的文件名」预填名称（可修改）；追加版本时名称只读、属工具级
+      ...(mode.value === 'create' ? { name: nameFromFileName(result.fileName) } : {}),
+      fileExt: fileExtFromName(result.fileName),
+    };
     step.value = 'meta';
     draftStore.clearPending(); // 已上传完成："未完成上传"的记录作废
     // 进入填写步骤即落一份草稿（无需先改字段）：切走/刷新后文件不用重传，直接停在填写步骤
@@ -222,7 +238,13 @@ async function handleSubmit(values: ToolMetaValues): Promise<void> {
       toolId: toolId.value,
     });
 
-    // 名称被占用（任何范围，临时关闭"同名转版本"）：留在当前步骤让用户改名，文件无需重传
+    // 回收站里有同上传人同名工具 → 提示"恢复旧工具 / 删除旧工具"（契约 v1.21 §9.4）
+    if (outcome.kind === 'in-trash') {
+      await handleTrashConflict(outcome, values);
+      return;
+    }
+
+    // @deprecated v1.21 起同名转版本已恢复，不再产生；保留兜底
     if (outcome.kind === 'name-blocked') {
       submitError.value = `名称「${values.name}」已被占用，请更换名称后重新提交；文件已上传，无需重传。`;
       return;
@@ -240,6 +262,58 @@ async function handleSubmit(values: ToolMetaValues): Promise<void> {
     submitError.value = error instanceof Error ? error.message : '提交失败，请稍后重试';
   } finally {
     submitting.value = false;
+  }
+}
+
+/**
+ * 回收站同名冲突（契约 §9.4 v1.21）：
+ * - 「恢复旧工具」→ 恢复后再次提交即走追加版本；
+ * - 「删除旧工具」→ 走 `batch-purge`（需 `tool:delete`；无该权限时**不提供**该选项，避免点了 403）。
+ */
+async function handleTrashConflict(
+  outcome: { toolId: ID | null },
+  values: ToolMetaValues,
+): Promise<void> {
+  if (!outcome.toolId) {
+    submitError.value = '回收站里已有同名工具，请先到「回收站」处理后再提交。';
+    return;
+  }
+  const canPurge = userStore.has(PERMISSION.TOOL_DELETE);
+  let action: 'restore' | 'purge';
+  try {
+    await ElMessageBox.confirm(
+      canPurge
+        ? `回收站里已有你上传的同名工具「${values.name}」。恢复它可继续追加为新版本；彻底删除它可释放名称、重新创建。`
+        : `回收站里已有你上传的同名工具「${values.name}」，请先恢复它（继续追加版本）后再提交。`,
+      '回收站已有同名工具',
+      canPurge
+        ? {
+            type: 'warning',
+            confirmButtonText: '恢复旧工具',
+            cancelButtonText: '删除旧工具',
+            distinguishCancelAndClose: true,
+          }
+        : { type: 'info', confirmButtonText: '恢复旧工具', showCancelButton: false },
+    );
+    action = 'restore';
+  } catch (err) {
+    if (err === 'cancel' && canPurge) {
+      action = 'purge';
+    } else {
+      return; // 关闭弹窗 = 不做处理
+    }
+  }
+
+  try {
+    if (action === 'purge') {
+      await purgeTools([outcome.toolId]);
+      submitError.value = '已彻底删除旧工具，请再次点击「提交」以创建新工具。';
+      return;
+    }
+    await restoreTool(outcome.toolId);
+    submitError.value = '旧工具已恢复，请再次点击「提交」以追加为新版本。';
+  } catch (error) {
+    submitError.value = error instanceof Error ? error.message : '处理旧工具失败，请稍后重试';
   }
 }
 

@@ -53,7 +53,7 @@ export const routes: RouteRecordRaw[] = [
         path: 'admin/deleted',
         name: 'tool-deleted',
         component: () => import('@/views/admin/DeletedView.vue'),
-        meta: { permission: PERMISSION.TOOL_DELETE },
+        // v1.21：登录即可进入回收站（无 tool:delete 时后端只返回本人数据）
       },
       {
         path: 'admin/user',

@@ -74,22 +74,46 @@ describe('上传后的落库提交', () => {
     expect(outcome).toEqual({ kind: 'created', toolId: '1001', versionId: '2001' });
   });
 
-  it('命中同名（canAppend = true，可见范围内）：临时关闭"同名转版本"，一律阻止提交', async () => {
-    mocks.checkToolName.mockResolvedValue({ existed: true, toolId: '1001', latestVersion: 'v1.2', canAppend: true });
+  /**
+   * **v1.21 行为变更**：P18 的"命中同名一律阻止"是临时口径，已随版本管理恢复终止。
+   * 现在同上传人命中未删同名 → **直接追加为新版本**（名称锁定、版本号由用户填）。
+   */
+  it('命中同名（existed = true）：恢复"同名转版本"，直接追加为新版本', async () => {
+    mocks.checkToolName.mockResolvedValue({
+      existed: true,
+      toolId: '1001',
+      latestVersion: 'v1.2',
+      canAppend: true,
+      inTrash: false,
+      trashToolId: null,
+    });
+    mocks.createToolVersion.mockResolvedValue('2002');
 
     const outcome = await submitTool({ mode: 'create', values: VALUES, upload: UPLOAD });
 
     expect(mocks.createTool).not.toHaveBeenCalled();
-    expect(mocks.createToolVersion).not.toHaveBeenCalled();
-    expect(outcome).toEqual({ kind: 'name-blocked', latestVersion: 'v1.2' });
+    expect(mocks.createToolVersion).toHaveBeenCalledTimes(1);
+    expect(mocks.createToolVersion).toHaveBeenCalledWith(
+      '1001',
+      expect.objectContaining({ version: 'v1.0', fileKey: 'file-key-1', fileSize: 2048 }),
+    );
+    expect(outcome).toEqual({ kind: 'version', toolId: '1001', versionId: '2002' });
   });
 
-  it('命中同名（canAppend = false，不可见）：阻止提交，不建也不追加（补充说明 N-01）', async () => {
-    mocks.checkToolName.mockResolvedValue({ existed: true, toolId: '9001', latestVersion: 'v3.0', canAppend: false });
+  /** **v1.21 新增分支**：回收站已有同上传人同名工具 → 不建不追加，交由页面二选一 */
+  it('回收站已有同名（inTrash = true）：返回 in-trash，不新建也不追加', async () => {
+    mocks.checkToolName.mockResolvedValue({
+      existed: false,
+      toolId: null,
+      latestVersion: null,
+      canAppend: false,
+      inTrash: true,
+      trashToolId: '9001',
+    });
 
     const outcome = await submitTool({ mode: 'create', values: VALUES, upload: UPLOAD });
 
-    expect(outcome).toEqual({ kind: 'name-blocked', latestVersion: 'v3.0' });
+    expect(outcome).toEqual({ kind: 'in-trash', toolId: '9001', latestVersion: null });
     expect(mocks.createTool).not.toHaveBeenCalled();
     expect(mocks.createToolVersion).not.toHaveBeenCalled();
   });

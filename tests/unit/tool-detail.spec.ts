@@ -125,10 +125,10 @@ describe('工具详情页', () => {
     expect(readme.text().split('\n').length).toBe(3);
     expect(readme.text()).toContain('第二步：运行 run.bat');
 
-    // 版本列表仍**暂时隐藏**（ToolDetailView 的 SHOW_VERSION_LIST=false）：
-    // 组件 ToolVersionTable 与接口 versions 数据均保留，待产品确认后恢复（属"行为变更、断言随行为更新"）
-    expect(wrapper.text()).not.toContain('版本列表');
-    expect(wrapper.findAll('.tb-ver__no').length).toBe(0);
+    // v1.21（M-24）：版本列表**已恢复展示**（SHOW_VERSION_LIST=true）——
+    // 原 P17 的"暂时隐藏"是过渡口径，随版本级删除落地而终止（属"行为变更、断言随行为更新"）
+    expect(wrapper.text()).toContain('版本列表');
+    expect(wrapper.findAll('.tb-ver__no').length).toBeGreaterThan(0);
   });
 
   it('工具不存在或已删除：给出明确提示并可返回列表', async () => {

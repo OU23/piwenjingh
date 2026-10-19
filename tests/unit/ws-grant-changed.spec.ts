@@ -118,6 +118,7 @@ const TOOL: ToolVO = {
   scope: 'DEPT',
   tags: [],
   uploaderName: '张三',
+  uploaderId: '9',
   deptName: '研发部',
   fileSize: 2048,
   downloadCount: 7,

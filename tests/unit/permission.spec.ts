@@ -31,11 +31,12 @@ describe('hasPermission', () => {
 });
 
 describe('filterMenuGroups', () => {
-  it('无任何权限时只保留登录即可见的入口', () => {
+  /** v1.21 行为变更：回收站入口不再要求 `tool:delete`（上传人要能进去恢复误删版本） */
+  it('无任何权限时保留"工具列表"与"回收站"', () => {
     const groups = filterMenuGroups(MENU, []);
     const items = groups.flatMap((group) => group.items);
 
-    expect(items.map((item) => item.title)).toEqual(['工具列表']);
+    expect(items.map((item) => item.title)).toEqual(['工具列表', '回收站']);
     // 没有任何权限的用户不应看到"系统管理"分组
     expect(groups.some((group) => group.title === '系统管理')).toBe(false);
   });
@@ -56,7 +57,7 @@ describe('filterMenuGroups', () => {
     expect(items.map((item) => item.title)).toEqual([
       '工具列表',
       '上传工具',
-      '已删除工具',
+      '回收站',
       '用户管理',
       '部门管理',
       '标签管理',
