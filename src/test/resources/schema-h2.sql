@@ -89,7 +89,7 @@ CREATE TABLE tb_tool (
   create_time       datetime     NOT NULL,
   update_time       datetime     NULL,
   PRIMARY KEY (id),
-  CONSTRAINT uk_tool_name UNIQUE (name)
+  CONSTRAINT uk_tool_name_uploader UNIQUE (name, uploader_id)
 );
 
 CREATE TABLE tb_tool_version (

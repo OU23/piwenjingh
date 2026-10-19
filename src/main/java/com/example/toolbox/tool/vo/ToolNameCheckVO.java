@@ -5,13 +5,13 @@ import lombok.Data;
 
 /**
  * 同名检查出参（契约 §9.4 ToolNameCheckVO）。
- * canAppend 为 v1.2 新增（N-01）：同名工具是否在当前用户**可见范围内**。
+ * v1.21：同名判定收窄到「当前上传人 + 未删除」；回收站里的同名工具由 inTrash 单独标识。
  */
 @Data
 @Builder
 public class ToolNameCheckVO {
 
-    /** 是否已存在同名工具 */
+    /** 当前登录人是否已有**未删除**的同名工具 */
     private Boolean existed;
 
     /** 已存在时返回其 ID，否则 null */
@@ -20,10 +20,12 @@ public class ToolNameCheckVO {
     /** 已存在时返回其最新版本号，否则 null */
     private String latestVersion;
 
-    /**
-     * 同名工具是否在当前用户可见范围内（本部门，或 scope = PUBLIC）。
-     * true = 可追加版本；false = 名称被占用但不可见（前端提示改名、不允许提交）。
-     * **无同名时为 false**（契约 §9.4）。
-     */
+    /** 是否可追加为新版本（existed = true 时恒为 true） */
     private Boolean canAppend;
+
+    /** 回收站里是否存在「同上传人 + 同名」的工具（tb_tool.deleted = 1） */
+    private Boolean inTrash;
+
+    /** inTrash = true 时返回该已删除工具的 ID，否则 null */
+    private String trashToolId;
 }

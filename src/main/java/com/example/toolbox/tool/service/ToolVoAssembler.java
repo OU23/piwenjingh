@@ -50,6 +50,7 @@ public class ToolVoAssembler {
                 .scope(tool.getScope())
                 .tags(loadTags(tool.getId()))
                 .uploaderName(userName(tool.getUploaderId()))
+                .uploaderId(IdUtils.toStr(tool.getUploaderId()))
                 .deptName(deptName(tool.getDeptId()))
                 .fileSize(tool.getFileSize())
                 .downloadCount(tool.getDownloadCount())

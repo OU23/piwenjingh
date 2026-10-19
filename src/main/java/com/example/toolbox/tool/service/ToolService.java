@@ -3,6 +3,7 @@ package com.example.toolbox.tool.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
+import com.example.toolbox.common.constant.PermissionCode;
 import com.example.toolbox.common.constant.Scope;
 import com.example.toolbox.common.exception.BusinessException;
 import com.example.toolbox.common.log.AuditLogger;
@@ -84,25 +85,37 @@ public class ToolService {
     // ---------------- §9.4 同名检查 ----------------
 
     /**
-     * 同名检查（契约 §9.4 + N-01）。
+     * 同名检查（契约 §9.4，**v1.21 起按上传人判定**）。
      *
-     * <p>名称**全局唯一**（不区分部门）；命中的工具若**不在当前用户可见范围内**，
-     * 则 {@code canAppend = false}，前端须提示"名称已被占用、请更换"，不允许提交。
+     * <p>只查「当前登录人 + 未删除」的同名工具 —— 别人的同名工具不再命中（GitHub 模式）。
+     * 回收站里自己的同名工具由 {@code inTrash} / {@code trashToolId} 单独返回，
+     * 供前端提示"删除旧工具 / 恢复旧工具"（§9.4 同名分支）。
+     *
+     * <p>分支互斥：命中未删除工具时 {@code inTrash} 恒为 false（无需提示清理回收站）。
      */
     public ToolNameCheckVO checkName(ToolNameCheckDTO dto) {
-        ToolDO existing = findByName(dto.getName().trim());
-        if (existing == null) {
-            // 无同名：existed=false，canAppend=false（契约 §9.4 明确）
+        LoginUser user = requireLogin();
+        String name = dto.getName().trim();
+
+        ToolDO existing = findByNameAndUploader(name, user.getUserId(), NOT_DELETED);
+        if (existing != null) {
             return ToolNameCheckVO.builder()
-                    .existed(false).toolId(null).latestVersion(null).canAppend(false)
+                    .existed(true)
+                    .toolId(IdUtils.toStr(existing.getId()))
+                    .latestVersion(existing.getLatestVersion())
+                    .canAppend(true)
+                    .inTrash(false)
+                    .trashToolId(null)
                     .build();
         }
-        boolean canAppend = scopeChecker.canAccess(existing, UserContext.get());
+        ToolDO trashed = findByNameAndUploader(name, user.getUserId(), DELETED);
         return ToolNameCheckVO.builder()
-                .existed(true)
-                .toolId(IdUtils.toStr(existing.getId()))
-                .latestVersion(existing.getLatestVersion())
-                .canAppend(canAppend)
+                .existed(false)
+                .toolId(null)
+                .latestVersion(null)
+                .canAppend(false)
+                .inTrash(trashed != null)
+                .trashToolId(trashed == null ? null : IdUtils.toStr(trashed.getId()))
                 .build();
     }
 
@@ -132,7 +145,10 @@ public class ToolService {
         return toolMapper.selectById(toolId);
     }
 
-    /** 该工具的全部版本（倒序） */
+    /**
+     * 该工具的全部版本（倒序）。
+     * v1.22 起版本**不做软删**（删除即物理删除），故此处无需过滤删除标记。
+     */
     public List<ToolVersionDO> listVersions(Long toolId) {
         return toolVersionMapper.selectList(Wrappers.<ToolVersionDO>lambdaQuery()
                 .eq(ToolVersionDO::getToolId, toolId)
@@ -170,10 +186,19 @@ public class ToolService {
                 .stream().map(UserPermissionDO::getPermissionCode).toList());
     }
 
-    /** 名称命中（**含已删除**，保持全局唯一语义） */
-    public ToolDO findByName(String name) {
+    /**
+     * 名称命中（**同上传人 + 指定删除状态**，契约 §9.4 v1.21）。
+     * 不同上传人的同名工具互不影响（GitHub 模式）。
+     */
+    public ToolDO findByNameAndUploader(String name, Long uploaderId, int deleted) {
+        if (name == null || uploaderId == null) {
+            return null;
+        }
         return toolMapper.selectOne(Wrappers.<ToolDO>lambdaQuery()
-                .eq(ToolDO::getName, name).last("LIMIT 1"));
+                .eq(ToolDO::getName, name)
+                .eq(ToolDO::getUploaderId, uploaderId)
+                .eq(ToolDO::getDeleted, deleted)
+                .last("LIMIT 1"));
     }
 
     /**
@@ -248,6 +273,16 @@ public class ToolService {
     /** 是否已软删除（null 视为未删除） */
     public static boolean isDeleted(ToolDO tool) {
         return tool != null && tool.getDeleted() != null && tool.getDeleted() != NOT_DELETED;
+    }
+
+    /**
+     * 是否持回收站**管理**权限（`tool:delete`）：
+     * 决定回收站列表看全部还是只看自己、以及"彻底删除 / 清空"按钮是否可用。
+     * v1.21：上传人本人的删除/恢复**不依赖**该权限点。
+     */
+    public static boolean canManageTrash(LoginUser user) {
+        return user != null && user.getPermissions() != null
+                && user.getPermissions().contains(PermissionCode.TOOL_DELETE);
     }
 
     /** 可见范围过滤条件的唯一构造入口（列表接口复用，禁止自行拼装） */

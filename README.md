@@ -47,9 +47,15 @@ mysql -u root -p toolbox < docs/db/04-add-tool-grant.sql
 
 # ⑤ 增量：补 tb_tool_version.storage_backend 列（M-22；**老库必做** —— 同上）
 mysql -u root -p toolbox < docs/db/05-add-storage-backend.sql
+
+# ⑥ 增量：名称唯一性改「按上传人」+（历史遗留）版本级软删除列（M-24）
+mysql -u root -p toolbox < docs/db/06-tool-version-delete.sql
+
+# ⑦ 回退：历史版本改物理删除 → 去掉 deleted 列、恢复版本唯一键（M-24 口径调整；**已跑过 ⑥ 的库必做**）
+mysql -u root -p toolbox < docs/db/07-revert-version-soft-delete.sql
 ```
 
-⚠️ **老库升级 = 按编号顺序执行 ②~⑤**（全部幂等，DDL 即时生效、**跑完无需重启后端**）。
+⚠️ **老库升级 = 按编号顺序执行 ②~⑦**（全部幂等，DDL 即时生效、**跑完无需重启后端**）。
 只跑 `schema.sql` **不会给已存在的表补列 / 补表** → 典型症状是**登录与列表正常，但上传 /
 下载 / 可见范围等接口 500**（日志 `Unknown column 'xxx'` 或 `Table 'xxx' doesn't exist`）。
 **交付时 `docs/db/` 必须整个目录带上服务器。**

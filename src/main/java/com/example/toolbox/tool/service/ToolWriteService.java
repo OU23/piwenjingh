@@ -22,6 +22,7 @@ import com.example.toolbox.tool.mapper.ToolMapper;
 import com.example.toolbox.tool.mapper.ToolTagMapper;
 import com.example.toolbox.tool.mapper.ToolVersionMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,8 +67,8 @@ public class ToolWriteService {
         LoginUser user = requireLogin();
         String name = dto.getName().trim();
 
-        // 名称全局唯一 → 1005（兜底；正常路径前端已被 check-name 拦住）
-        if (toolService.findByName(name) != null) {
+        // 名称在「上传人维度」唯一 → 1005（v1.21；别人的同名工具不影响）
+        if (toolService.findByNameAndUploader(name, user.getUserId(), ToolService.NOT_DELETED) != null) {
             throw new BusinessException(Code.CONFLICT, "工具名称已存在");
         }
         validateScope(dto.getScope());
@@ -92,7 +93,12 @@ public class ToolWriteService {
         tool.setLatestVersion(dto.getVersion().trim());
         tool.setFileSize(dto.getFileSize());
         tool.setLatestVersionId(0L);
-        toolMapper.insert(tool);
+        try {
+            toolMapper.insert(tool);
+        } catch (DuplicateKeyException e) {
+            // 并发下唯一键 (name, uploader_id) 兜底：绝不把 DB 异常裸露成 500
+            throw new BusinessException(Code.CONFLICT, "工具名称已存在");
+        }
 
         ToolVersionDO version = insertVersion(tool.getId(), dto.getVersion(), dto.getFileKey(),
                 dto.getFileName(), dto.getFileExt(), dto.getFileSize(), user.getUserId());
@@ -116,7 +122,7 @@ public class ToolWriteService {
         ToolDO tool = toolService.requireVisibleTool(toolId, user);
 
         String versionNo = dto.getVersion().trim();
-        // 同一工具内版本号不可重复 → 1005（只校长度与重复，不做格式强校验 —— N-08）
+        // 同一工具内版本号不可重复 → 1005（v1.22：版本删除即物理删除，唯一性直接由 DB + 本校验保证）
         Long dup = toolVersionMapper.selectCount(Wrappers.<ToolVersionDO>lambdaQuery()
                 .eq(ToolVersionDO::getToolId, toolId)
                 .eq(ToolVersionDO::getVersion, versionNo));
@@ -125,8 +131,14 @@ public class ToolWriteService {
         }
         requireFileKeyUsable(dto.getFileKey());
 
-        ToolVersionDO version = insertVersion(toolId, versionNo, dto.getFileKey(),
-                dto.getFileName(), dto.getFileExt(), dto.getFileSize(), user.getUserId());
+        ToolVersionDO version;
+        try {
+            version = insertVersion(toolId, versionNo, dto.getFileKey(),
+                    dto.getFileName(), dto.getFileExt(), dto.getFileSize(), user.getUserId());
+        } catch (DuplicateKeyException e) {
+            // 并发下 DB 唯一键 (tool_id, version) 兜底：绝不把 DB 异常裸露成 500
+            throw new BusinessException(Code.CONFLICT, "该版本号已存在：" + versionNo);
+        }
 
         // 同事务更新工具上的冗余"最新版本"信息
         tool.setLatestVersionId(version.getId());
@@ -150,7 +162,8 @@ public class ToolWriteService {
 
         String newName = dto.getName().trim();
         if (!newName.equals(tool.getName())) {
-            ToolDO other = toolService.findByName(newName);
+            // v1.21：改名只与**同一上传人**的未删除工具比对
+            ToolDO other = toolService.findByNameAndUploader(newName, tool.getUploaderId(), ToolService.NOT_DELETED);
             if (other != null && !other.getId().equals(toolId)) {
                 throw new BusinessException(Code.CONFLICT, "工具名称已存在");
             }
@@ -183,7 +196,8 @@ public class ToolWriteService {
     // ---------------- 内部 ----------------
 
     /**
-     * 编辑判权（契约 v1.15 §9.4）：满足任一即放行 ——
+     * 「可管理该工具」判权（契约 v1.15 §9.4 编辑口径；**v1.21 起删除 / 恢复版本与工具复用同一把尺子**）：
+     * 满足任一即放行 ——
      * <ol>
      *   <li><b>上传者本人</b>：{@code tb_tool.uploader_id == 当前登录用户}；</li>
      *   <li><b>双权限管理员</b>：权限集合<b>同时</b>含 {@code user:manage} 与 {@code user:grant}（**AND**）；</li>
@@ -191,7 +205,7 @@ public class ToolWriteService {
      * </ol>
      * 均不满足 → {@code 403}（{@link Code#FORBIDDEN}）。判定不查库：{@link LoginUser} 已携带权限快照。
      */
-    private void requireEditable(ToolDO tool, LoginUser user) {
+    public void requireEditable(ToolDO tool, LoginUser user) {
         if (scopeChecker.isGlobalAdmin(user)) {
             return;
         }

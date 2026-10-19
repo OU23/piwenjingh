@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS `tb_tag` (
 
 CREATE TABLE IF NOT EXISTS `tb_tool` (
   `id`                bigint       NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `name`              varchar(100) NOT NULL COMMENT '工具名称，全局唯一（不区分部门）',
+  `name`              varchar(100) NOT NULL COMMENT '工具名称，同一上传人内唯一（M-24；不同上传人可同名）',
   `intro`             varchar(200) NOT NULL COMMENT '简介',
   `readme`            text         NULL     COMMENT '使用说明（纯文本，保留换行）',
   `file_ext`          varchar(20)  NOT NULL COMMENT '文件格式（小写，如 py / zip / jar）',
@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS `tb_tool` (
   `create_time`       datetime     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time`       datetime     NULL     DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '最近更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_tool_name` (`name`),
+  UNIQUE KEY `uk_tool_name_uploader` (`name`, `uploader_id`),
   KEY `idx_tool_dept_scope_deleted` (`dept_id`, `scope`, `deleted`),
   KEY `idx_tool_create_time` (`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工具表（元数据，不含文件）';
@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS `tb_tool` (
 CREATE TABLE IF NOT EXISTS `tb_tool_version` (
   `id`            bigint       NOT NULL AUTO_INCREMENT COMMENT '主键',
   `tool_id`       bigint       NOT NULL COMMENT '所属工具 ID',
-  `version`       varchar(20)  NOT NULL COMMENT '版本号，同一工具下不可重复',
+  `version`       varchar(20)  NOT NULL COMMENT '版本号，同一工具下未删除版本不可重复（应用层校验）',
   `file_key`      varchar(64)  NOT NULL COMMENT '存储键（物理位置由存储层解析，禁止存物理路径）',
   `file_name`     varchar(255) NOT NULL COMMENT '原始文件名（含扩展名）',
   `file_ext`      varchar(20)  NOT NULL COMMENT '文件格式（小写）',

@@ -27,8 +27,8 @@ import java.util.List;
  *
  * <p>三条关键口径：
  * <ol>
- *   <li><b>软删除</b>：置 `deleted = 1`，记录与版本全部保留 —— 因此**恢复成本为零**，
- *       且"恢复后版本与下载都正常"天然成立（版本行从未被动过）；</li>
+ *   <li><b>软删除</b>：置 `deleted = 1`，记录保留 —— 恢复成本为零；
+ *       **v1.22**：历史版本不做软删（删除即物理删除），恢复工具不涉及版本状态；</li>
  *   <li><b>批量接口幂等</b>：对不存在 / 不可见 / 状态不符的 ID **一律忽略**，
  *       整体仍返回 `code = 0`（契约明确不做部分失败回滚）—— 故批量路径**不抛 403/1004**，
  *       只逐条 `continue`；单个接口才做严格报错；</li>
@@ -48,6 +48,7 @@ public class ToolTrashService {
 
     private final ToolMapper toolMapper;
     private final ToolService toolService;
+    private final ToolWriteService toolWriteService;
     private final ScopeChecker scopeChecker;
     private final AuditLogger auditLogger;
 
@@ -63,6 +64,8 @@ public class ToolTrashService {
     public void softDelete(Long toolId) {
         LoginUser user = requireLogin();
         ToolDO tool = toolService.requireVisibleToolIncludingDeleted(toolId, user);
+        // v1.21：删除判权与编辑同口径（上传人本人 / 双权限 / 全局管理员），不再要求 tool:delete
+        toolWriteService.requireEditable(tool, user);
         if (ToolService.isDeleted(tool)) {
             return;
         }
@@ -87,7 +90,12 @@ public class ToolTrashService {
 
     // ---------------- 已删除列表 ----------------
 
-    /** 已删除工具列表（`GET /api/tools/deleted`）：可见范围内 `deleted = 1`，支持关键词 + 分页 */
+    /**
+     * 已删除工具列表（`GET /api/tools/deleted`）：可见范围内 `deleted = 1`，支持关键词 + 分页。
+     *
+     * <p><b>v1.21 可见性</b>：持 `tool:delete` 者看**全部**（原有口径）；无该权限的登录用户
+     * 也可调用，但**只返回本人上传的**（上传人可自助恢复误删的版本，避免"能删不能救"）。
+     */
     public PageResult<ToolVO> deletedPage(int pageNum, int pageSize, String keyword) {
         LoginUser user = requireLogin();
         int pn = pageNum <= 0 ? 1 : pageNum;
@@ -95,8 +103,12 @@ public class ToolTrashService {
 
         LambdaQueryWrapper<ToolDO> w = Wrappers.lambdaQuery();
         w.eq(ToolDO::getDeleted, ToolService.DELETED);
-        // ★ 可见范围唯一入口：全局管理员不加条件 → 契约要求"返回全部部门的已删除工具"自动成立
-        toolService.applyVisibility(w, ToolDO::getScope, ToolDO::getDeptId, user);
+        if (ToolService.canManageTrash(user)) {
+            // ★ 可见范围唯一入口：全局管理员不加条件 → 契约要求"返回全部部门的已删除工具"自动成立
+            toolService.applyVisibility(w, ToolDO::getScope, ToolDO::getDeptId, user);
+        } else {
+            w.eq(ToolDO::getUploaderId, user.getUserId());
+        }
         if (keyword != null && !keyword.isBlank()) {
             String kw = keyword.trim();
             w.and(q -> q.like(ToolDO::getName, kw).or().like(ToolDO::getIntro, kw));
@@ -115,13 +127,15 @@ public class ToolTrashService {
      * 恢复已删除工具（`POST /api/tools/{id}/restore`）。
      *
      * <p>不存在的记录、或**未删除**的记录 → `1004`（契约 §9.6）；
-     * 版本无需单独恢复 —— 软删除从未动过版本行，置回 `deleted = 0` 后
-     * 工具与其**全部版本**即一并回到原状态（验收 A5）。
+     * v1.22 起历史版本**不再软删**（删除即物理删除），因此恢复工具只需把工具置回未删除，
+     * 其现存版本与 `latest_*` 自然回到原状态。
      */
     @Transactional
     public void restore(Long toolId) {
         LoginUser user = requireLogin();
         ToolDO tool = toolService.requireVisibleToolIncludingDeleted(toolId, user);
+        // v1.21：恢复判权与删除同口径（上传人本人 / 双权限 / 全局管理员）
+        toolWriteService.requireEditable(tool, user);
         if (!ToolService.isDeleted(tool)) {
             throw new BusinessException(Code.NOT_FOUND, "工具不存在或未处于已删除状态");
         }

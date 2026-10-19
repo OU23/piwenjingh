@@ -160,13 +160,17 @@ class ToolServiceTest extends IntegrationTestBase {
         assertTrue(vo.getCanAppend(), "本部门工具应可追加版本");
     }
 
-    /** check-name：同名但不可见（他部门 DEPT）→ canAppend=false（N-01 关键分支） */
+    /**
+     * check-name：**v1.21 行为变更** —— 名称唯一性收窄到上传人。
+     * 他部门（= 他人）的同名工具**不再命中**：existed=false，前端走正常新建。
+     * （旧断言为"名称全局唯一，他部门也能查到"，随契约 v1.21 废弃。）
+     */
     @Test
-    void checkNameOtherDeptCannotAppend() {
+    void checkNameOtherUploaderSameNameIsIgnored() {
         // 先用 A 部门身份建一个 DEPT 工具
         toolWriteService.create(saveDto("工具A", "v1.0", Scope.DEPT, putFile(16)));
 
-        // 切到 B 部门用户
+        // 切到 B 部门用户（不同上传人）
         Long userB = 888_888L;
         loginAs(userB, "userB", deptB, PermissionCode.TOOL_UPLOAD);
 
@@ -174,13 +178,17 @@ class ToolServiceTest extends IntegrationTestBase {
         dto.setName("工具A");
         ToolNameCheckVO vo = toolService.checkName(dto);
 
-        assertTrue(vo.getExisted(), "名称全局唯一，他部门也能查到已存在");
-        assertFalse(vo.getCanAppend(), "不可见时 canAppend 必须为 false，前端应禁止提交");
+        assertFalse(vo.getExisted(), "v1.21：别人的同名工具不影响我的名称判定");
+        assertFalse(vo.getCanAppend(), "无同名时 canAppend=false");
+        assertFalse(vo.getInTrash(), "未命中回收站");
     }
 
-    /** check-name：同名且 PUBLIC → 他部门也可追加 */
+    /**
+     * check-name：**v1.21 行为变更** —— 他人上传的 PUBLIC 同名工具同样不命中。
+     * （旧断言为"跨部门可追加版本"，随契约 v1.21 废弃：同名转版本只在同一上传人内发生。）
+     */
     @Test
-    void checkNamePublicToolCanAppendAcrossDept() {
+    void checkNamePublicToolByOtherUploaderIsIgnored() {
         toolWriteService.create(saveDto("公共工具", "v1.0", Scope.PUBLIC, putFile(16)));
 
         loginAs(888_888L, "userB", deptB, PermissionCode.TOOL_UPLOAD);
@@ -189,7 +197,8 @@ class ToolServiceTest extends IntegrationTestBase {
         dto.setName("公共工具");
         ToolNameCheckVO vo = toolService.checkName(dto);
 
-        assertTrue(vo.getCanAppend(), "PUBLIC 工具跨部门可见，应可追加版本");
+        assertFalse(vo.getExisted(), "v1.21：同名判定按上传人，不按可见范围");
+        assertFalse(vo.getCanAppend(), "无同名时 canAppend=false");
     }
 
     /** 追加版本：同一工具内版本号唯一 → 1005 */

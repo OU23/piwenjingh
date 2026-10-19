@@ -74,19 +74,22 @@ class ToolTrashEndpointTest extends IntegrationTestBase {
         toolId = tool.getId();
     }
 
-    /** A7：未登录 → 真 401；已登录但无 `tool:delete` → 真 403 */
+    /**
+     * A7（**v1.21 行为变更**）：未登录一律 401；**管理动作**（批量删 / 彻底删 / 清空）仍需 `tool:delete`。
+     *
+     * <p>删除 / 恢复 / 回收站列表已改为"登录即可 + 服务层判权（上传人本人 / 双权限 / 全局管理员）"
+     * 与"列表按权限收窄为本人"，故不再断言这三类接口对无权限用户返回 403。
+     */
     @Test
     void endpointsRequireDeletePermission() throws Exception {
         mockMvc.perform(delete("/api/tools/" + toolId)).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/tools/deleted")).andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/tools/batch-delete")).andExpect(status().isUnauthorized());
 
-        String noPerm = tokenWith();   // 不带任何权限点
-        mockMvc.perform(delete("/api/tools/" + toolId)
-                        .header("Authorization", "Bearer " + noPerm))
-                .andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/tools/deleted")
-                        .header("Authorization", "Bearer " + noPerm))
+        String noPerm = tokenWith();   // userId = 999999（= 本夹具工具的上传人）
+        mockMvc.perform(post("/api/tools/batch-delete")
+                        .header("Authorization", "Bearer " + noPerm)
+                        .contentType("application/json").content("{\"ids\":[\"" + toolId + "\"]}"))
                 .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/tools/batch-purge")
                         .header("Authorization", "Bearer " + noPerm)
@@ -95,6 +98,30 @@ class ToolTrashEndpointTest extends IntegrationTestBase {
         mockMvc.perform(delete("/api/tools/deleted")
                         .header("Authorization", "Bearer " + noPerm))
                 .andExpect(status().isForbidden());
+    }
+
+    /** v1.21：回收站列表对登录用户开放（无 tool:delete 也 200，数据由后端收窄为本人） */
+    @Test
+    void trashListsAreOpenToAnyLoggedInUser() throws Exception {
+        String noPerm = tokenWith();
+        mockMvc.perform(get("/api/tools/deleted").header("Authorization", "Bearer " + noPerm))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(0));
+        // v1.22：/deleted-versions 已随"版本改物理删除"移除
+    }
+
+    /** v1.21：上传人本人**无需任何权限点**即可删除自己的工具（避免"能删不能救"） */
+    @Test
+    void uploaderWithoutPermissionCanDeleteOwnTool() throws Exception {
+        mockMvc.perform(delete("/api/tools/" + toolId).header("Authorization", "Bearer " + tokenWith()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(0));
+    }
+
+    /** v1.21：非上传人且无权限 → 真 403 / 1002 */
+    @Test
+    void nonUploaderWithoutPermissionIsForbidden() throws Exception {
+        mockMvc.perform(delete("/api/tools/" + toolId)
+                        .header("Authorization", "Bearer " + tokenFor(888_888L)))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(1002));
     }
 
     /**
@@ -202,5 +229,12 @@ class ToolTrashEndpointTest extends IntegrationTestBase {
         return signToken(LoginUser.builder()
                 .userId(999_999L).username("deleter").deptId(deptId)
                 .permissions(Set.of(perms)).build());
+    }
+
+    /** 指定用户 ID 的令牌（v1.21：用于"非上传人"场景） */
+    private String tokenFor(Long userId) {
+        return signToken(LoginUser.builder()
+                .userId(userId).username("other").deptId(deptId)
+                .permissions(Set.of()).build());
     }
 }

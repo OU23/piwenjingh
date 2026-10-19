@@ -60,7 +60,9 @@ class ToolEditPermissionTest extends IntegrationTestBase {
         ownToolId = insertTool("上传者的工具", deptA, Scope.DEPT, uploaderId, ToolService.NOT_DELETED);
         publicToolId = insertTool("他部门的公开工具", deptB, Scope.PUBLIC, 2002L, ToolService.NOT_DELETED);
         deletedToolId = insertTool("已删除工具", deptA, Scope.DEPT, uploaderId, 1);
-        // 名称全局唯一用：与 ownToolId 同名（A10）
+        // v1.21：名称唯一性按上传人 —— 这里备一个"上传者自己的另一个未删工具"
+        insertTool("自己的另一个工具", deptA, Scope.DEPT, uploaderId, ToolService.NOT_DELETED);
+        // 他人同名工具（v1.21 起**不再**构成重名冲突）
         insertTool("重名工具", deptB, Scope.PUBLIC, 2002L, ToolService.NOT_DELETED);
     }
 
@@ -143,10 +145,21 @@ class ToolEditPermissionTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$.code").value(2004));
     }
 
-    /** A10：上传者改名撞已存在名称 → 1005（回归：收紧判权未影响既有唯一性校验） */
+    /**
+     * A10（**v1.21 行为变更**）：撞**他人**的同名工具 → 允许改名。
+     * 名称唯一性已收窄到「上传人维度」（GitHub 模式），别人的同名不再占用我的名称。
+     */
     @Test
-    void duplicateNameByUploaderReturns1005() throws Exception {
+    void duplicateNameByOtherUploaderIsAllowed() throws Exception {
         edit(ownToolId, token(uploaderId, deptA), "重名工具")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+    }
+
+    /** A10b（v1.21 新增）：撞**自己另一个未删工具**的同名 → 1005（唯一性仍守得住） */
+    @Test
+    void duplicateNameBySameUploaderReturns1005() throws Exception {
+        edit(ownToolId, token(uploaderId, deptA), "自己的另一个工具")
                 .andExpect(jsonPath("$.code").value(1005));
     }
 

@@ -46,6 +46,8 @@ mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/02-seed-base.sql       
 mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/03-align-schema.sql         # 时间列对齐（补 DEFAULT / ON UPDATE）
 mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/04-add-tool-grant.sql       # 新增 tb_tool_grant（M-17 定向授权）
 mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/05-add-storage-backend.sql  # tb_tool_version 加 storage_backend（M-22 OSS）
+mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/06-tool-version-delete.sql  # 名称按上传人唯一 +（遗留）版本软删列（M-24）
+mysql -h DB_HOST -P 3306 -u DB_USER -p DB_NAME < docs/db/07-revert-version-soft-delete.sql  # 回退版本软删：删列 + 恢复唯一键（已跑过 06 必做）
 ```
 
 ⚠️ 三条要点：

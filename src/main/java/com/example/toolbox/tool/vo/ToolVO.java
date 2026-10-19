@@ -34,6 +34,12 @@ public class ToolVO {
     /** 上传人姓名 */
     private String uploaderName;
 
+    /**
+     * 上传人 ID（**v1.21 新增**）：供前端按行判定"上传人本人可删除/恢复"，
+     * 避免把删除按钮只绑在 `tool:delete` 上（契约 §9.6 v1.21 判权）。
+     */
+    private String uploaderId;
+
     /** 归属部门名称 */
     private String deptName;
 
