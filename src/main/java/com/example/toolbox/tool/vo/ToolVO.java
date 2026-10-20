@@ -28,6 +28,20 @@ public class ToolVO {
     /** 可见范围：DEPT / PUBLIC */
     private String scope;
 
+    /**
+     * 工具类型（**v1.23 新增**）：{@code FILE} 文件工具 / {@code LINK} 链接工具。
+     * 老数据（{@code tool_type} 为空）一律返回 {@code FILE}。
+     */
+    private String toolType;
+
+    /**
+     * 链接地址（**v1.23 新增**）：仅 {@code LINK} 有值；{@code FILE} 返回 {@code null}。
+     *
+     * <p>⚠️ 安全提示：这是**用户可控内容**，前端必须按协议白名单渲染（用 {@code :href} /
+     * {@code textContent}，禁止 {@code v-html} / {@code innerHTML}）。
+     */
+    private String linkUrl;
+
     /** 标签列表 */
     private List<TagItem> tags;
 

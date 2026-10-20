@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.toolbox.common.constant.Scope;
+import com.example.toolbox.common.constant.ToolType;
 import com.example.toolbox.common.exception.BusinessException;
 import com.example.toolbox.common.result.Code;
 import com.example.toolbox.common.result.PageResult;
@@ -48,10 +49,26 @@ public class ToolQueryService {
     private final ToolTagMapper toolTagMapper;
     private final ToolService toolService;
 
-    /** 工具列表：检索 + 筛选 + 排序 + 分页 */
+    /**
+     * 工具列表（**兼容重载**）：不带 {@code toolType}，等价于 {@code ALL}（不过滤类型）。
+     *
+     * <p>保留该重载是为了不破坏既有调用方（含单测）的签名；新代码请使用带 {@code toolType} 的版本。
+     */
     public PageResult<ToolVO> page(int pageNum, int pageSize, String keyword,
                                    String tagIds, String fileExt, String scope,
                                    String sortBy, String sortOrder) {
+        return page(pageNum, pageSize, keyword, tagIds, fileExt, scope, null, sortBy, sortOrder);
+    }
+
+    /**
+     * 工具列表：检索 + 筛选 + 排序 + 分页。
+     *
+     * @param toolType 类型筛选（**v1.23 新增**）：{@code ALL}（默认）/ {@code FILE} / {@code LINK}，
+     *                 大小写不敏感；非法值 → 1003
+     */
+    public PageResult<ToolVO> page(int pageNum, int pageSize, String keyword,
+                                   String tagIds, String fileExt, String scope,
+                                   String toolType, String sortBy, String sortOrder) {
         LoginUser user = UserContext.get();
         if (user == null) {
             throw new BusinessException(Code.UNAUTHENTICATED);
@@ -65,8 +82,9 @@ public class ToolQueryService {
         // 排除已删除（列表不含已删除数据）
         w.eq(ToolDO::getDeleted, ToolService.NOT_DELETED);
 
-        // ★ 可见范围过滤（含 M-17 定向授权例外）：唯一入口，不在此重写
-        toolService.applyVisibilityIncludingGrant(w, ToolDO::getScope, ToolDO::getDeptId, user);
+        // ★ 可见范围过滤（含 M-17 定向授权例外 + M-25 上传人恒可见）：唯一入口，不在此重写
+        toolService.applyVisibilityIncludingGrant(w, ToolDO::getScope, ToolDO::getDeptId,
+                ToolDO::getUploaderId, user);
 
         // 关键词：匹配工具名称 + 简介（模糊）
         if (keyword != null && !keyword.isBlank()) {
@@ -87,6 +105,15 @@ public class ToolQueryService {
                 throw new BusinessException(Code.PARAM_INVALID, "可见范围仅支持 DEPT 或 PUBLIC");
             }
             w.eq(ToolDO::getScope, s);
+        }
+
+        // 类型筛选（v1.23）：ALL 不加条件（且不下发到 SQL）；非法值 → 1003
+        String type = ToolType.parseFilter(toolType);
+        if (type == null) {
+            throw new BusinessException(Code.PARAM_INVALID, "工具类型仅支持 ALL / FILE / LINK");
+        }
+        if (!ToolType.ALL.equals(type)) {
+            w.eq(ToolDO::getToolType, type);
         }
 
         // 标签：多值逗号分隔，命中任一（先查关联表拿工具 ID，再作为 in 条件）

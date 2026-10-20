@@ -54,7 +54,8 @@ import java.util.Set;
  * <p>关键约束：
  * <ul>
  *   <li>可见范围一律经 {@link ScopeChecker}（R3），**禁止在本类重写判定**；</li>
- *   <li>归属部门取**当前登录用户**，不接受前端传入（契约 §9.4）；</li>
+ *   <li>归属部门默认取**当前登录用户**；**v1.23 起**持 {@code tool:assign} 者可指定 /
+ *       调整（{@code ToolSaveDTO.deptId} 与 {@code PUT /api/tools/{id}/dept}）；</li>
  *   <li>对外 VO **不返回 fileKey** 等存储内部字段（契约 §9.3）；</li>
  *   <li>已删除工具不可编辑 / 追加版本 → 2004（契约 §9.6）；</li>
  *   <li>原则 8：**不在事务中做文件 IO**（本类的写操作都是纯 DB，fileKey 只做存在性校验）。</li>
@@ -238,12 +239,17 @@ public class ToolService {
     /**
      * 列表过滤（**含**定向授权例外，M-17）：供只读列表使用，委托 ScopeChecker 唯一入口。
      * 回收站 / 写操作列表请使用 {@link #applyVisibility}。
+     *
+     * <p><b>v1.23（M-25）</b>：新增 {@code uploaderIdGetter} 参数 —— 上传人恒可见必须
+     * **下推到 SQL**（{@code OR uploader_id = ?}），否则分页会错。
      */
     public <T> LambdaQueryWrapper<T> applyVisibilityIncludingGrant(LambdaQueryWrapper<T> wrapper,
                                                                  SFunction<T, String> scopeGetter,
                                                                  SFunction<T, Long> deptIdGetter,
+                                                                 SFunction<T, Long> uploaderIdGetter,
                                                                  LoginUser user) {
-        return scopeChecker.applyVisibilityIncludingGrant(wrapper, scopeGetter, deptIdGetter, user);
+        return scopeChecker.applyVisibilityIncludingGrant(wrapper, scopeGetter, deptIdGetter,
+                uploaderIdGetter, user);
     }
 
     /** 列表项 VO 组装（薄委托；实现见 {@link ToolVoAssembler}） */
@@ -285,12 +291,18 @@ public class ToolService {
                 && user.getPermissions().contains(PermissionCode.TOOL_DELETE);
     }
 
-    /** 可见范围过滤条件的唯一构造入口（列表接口复用，禁止自行拼装） */
+    /**
+     * 可见范围过滤条件的唯一构造入口（列表接口复用，禁止自行拼装）。
+     *
+     * <p><b>v1.23（M-25）</b>：新增 {@code uploaderIdGetter}（`ToolDO::getUploaderId`）——
+     * 上传人恒可见/可管，且该条件**必须下推 SQL**，不得查出来再过滤。
+     */
     public <T> LambdaQueryWrapper<T> applyVisibility(LambdaQueryWrapper<T> wrapper,
                                                      SFunction<T, String> scopeGetter,
                                                      SFunction<T, Long> deptIdGetter,
+                                                     SFunction<T, Long> uploaderIdGetter,
                                                      LoginUser user) {
-        return scopeChecker.applyVisibility(wrapper, scopeGetter, deptIdGetter, user);
+        return scopeChecker.applyVisibility(wrapper, scopeGetter, deptIdGetter, uploaderIdGetter, user);
     }
 
     // ---------------- 内部 ----------------

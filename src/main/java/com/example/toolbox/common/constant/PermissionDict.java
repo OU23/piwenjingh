@@ -3,8 +3,10 @@ package com.example.toolbox.common.constant;
 import java.util.List;
 
 /**
- * 权限点字典（契约 §13.1，共 8 个，按分组）。
+ * 权限点字典（契约 §13.1，v1.23 起共 **9 个**，按分组）。
  * 字典由后端按此返回，前端不硬编码；权限点编码前后端共用同一套。
+ *
+ * <p>v1.23（M-25）在「工具」分组新增 {@code tool:assign}（工具归属调整）。
  */
 public final class PermissionDict {
 
@@ -21,7 +23,11 @@ public final class PermissionDict {
             new Group("tool", "工具", List.of(
                     new Item(PermissionCode.TOOL_UPLOAD, "上传工具", "上传新工具或为已有工具追加版本"),
                     new Item(PermissionCode.TOOL_DOWNLOAD, "下载工具", "下载工具文件"),
-                    new Item(PermissionCode.TOOL_DELETE, "删除工具", "删除工具及彻底删除、从已删除列表恢复"))),
+                    new Item(PermissionCode.TOOL_DELETE, "删除工具", "删除工具及彻底删除、从已删除列表恢复"),
+                    // v1.23（M-25）：跨部门查看全部工具 + 调整任意工具归属部门 + 创建时指定部门；
+                    // ⚠️ 不含内容编辑权与删除权
+                    new Item(PermissionCode.TOOL_ASSIGN, "工具归属调整",
+                            "跨部门查看全部工具、调整工具归属部门、创建工具时指定归属部门"))),
             new Group("user", "用户", List.of(
                     new Item(PermissionCode.USER_MANAGE, "用户管理", "创建账号、修改姓名与归属部门、启用停用"),
                     new Item(PermissionCode.USER_GRANT, "权限分配", "查看与分配用户权限点"))),

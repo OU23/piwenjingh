@@ -79,6 +79,8 @@ CREATE TABLE tb_tool (
   platform          varchar(50)  NULL,
   dependency        varchar(500) NULL,
   scope             varchar(16)  NOT NULL,
+  tool_type         varchar(8)   NOT NULL DEFAULT 'FILE',
+  link_url          varchar(512) NULL,
   dept_id           bigint       NOT NULL,
   uploader_id       bigint       NOT NULL,
   latest_version_id bigint       NOT NULL,

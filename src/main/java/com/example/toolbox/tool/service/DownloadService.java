@@ -1,5 +1,6 @@
 package com.example.toolbox.tool.service;
 
+import com.example.toolbox.common.constant.ToolType;
 import com.example.toolbox.common.exception.BusinessException;
 import com.example.toolbox.common.result.Code;
 import com.example.toolbox.security.LoginUser;
@@ -197,6 +198,11 @@ public class DownloadService {
      * <p>包级可见：`DownloadUrlService` 复用同一份解析，**不复制这段逻辑**。
      */
     ToolVersionDO resolveVersion(ToolDO tool, String versionId) {
+        // v1.23：链接工具没有文件（无版本记录）→ 下载链路统一 2004（"该工具没有可下载文件"）。
+        // 放在最前，让 /download、/download-url、/download-token 三条链路共用同一条判定。
+        if (ToolType.isLink(tool.getToolType())) {
+            throw new BusinessException(Code.TOOL_DELETED, "该工具没有可下载文件");
+        }
         if (versionId == null || versionId.isBlank()) {
             if (tool.getLatestVersionId() == null || tool.getLatestVersionId() <= 0) {
                 throw new BusinessException(Code.TOOL_DELETED, "工具暂无可用版本");

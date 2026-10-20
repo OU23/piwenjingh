@@ -187,7 +187,8 @@ class ToolGrantVisibilityTest extends IntegrationTestBase {
         grantViewer();
         // 写路径列表（applyVisibility，不含授权例外）：授权用户看不到该工具
         LambdaQueryWrapper<ToolDO> w = toolService.applyVisibility(
-                Wrappers.lambdaQuery(), ToolDO::getScope, ToolDO::getDeptId, viewerUser());
+                Wrappers.lambdaQuery(), ToolDO::getScope, ToolDO::getDeptId,
+                ToolDO::getUploaderId, viewerUser());
         assertEquals(0, toolMapper.selectCount(w).intValue(), "已删除列表等写路径不应包含授权工具");
     }
 

@@ -1,5 +1,6 @@
 package com.example.toolbox.tool.service;
 
+import com.example.toolbox.common.constant.ToolType;
 import com.example.toolbox.common.exception.BusinessException;
 import com.example.toolbox.common.result.Code;
 import com.example.toolbox.security.LoginUser;
@@ -37,6 +38,11 @@ public class DownloadTokenService {
         }
         // 与下载接口同口径：不存在 → 1004；已删除 → 2004；不可见 → 403（含 M-17 定向授权例外）
         ToolDO tool = toolService.requireVisibleForRead(toolId, user);
+
+        // v1.23：链接工具没有文件 → 2004（与 §9.5 下载链路同一口径，不签发无意义的令牌）
+        if (ToolType.isLink(tool.getToolType())) {
+            throw new BusinessException(Code.TOOL_DELETED, "该工具没有可下载文件");
+        }
 
         Long resolvedVersionId = resolveVersionId(tool, versionId);
 

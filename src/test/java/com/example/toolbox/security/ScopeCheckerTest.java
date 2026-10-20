@@ -31,7 +31,7 @@ class ScopeCheckerTest extends IntegrationTestBase {
     @Autowired
     private ScopeChecker checker;
 
-    /** 测试用资源：只暴露 scope / deptId 两个判定所需属性 */
+    /** 测试用资源：只暴露 scope / deptId 两个判定所需属性（无上传人） */
     private record FakeTool(String scope, Long deptId) implements ScopedResource {
         @Override
         public String getScope() {
@@ -46,6 +46,34 @@ class ScopeCheckerTest extends IntegrationTestBase {
         @Override
         public Long getId() {
             return null;
+        }
+
+        @Override
+        public Long getUploaderId() {
+            return null;
+        }
+    }
+
+    /** 测试用资源：额外带上传人，用于 M-25「上传人恒可见」规则 */
+    private record OwnedTool(String scope, Long deptId, Long uploaderId) implements ScopedResource {
+        @Override
+        public String getScope() {
+            return scope;
+        }
+
+        @Override
+        public Long getDeptId() {
+            return deptId;
+        }
+
+        @Override
+        public Long getId() {
+            return 1L;
+        }
+
+        @Override
+        public Long getUploaderId() {
+            return uploaderId;
         }
     }
 
@@ -112,6 +140,28 @@ class ScopeCheckerTest extends IntegrationTestBase {
         assertFalse(checker.isGlobalAdmin(null), "未登录不是管理员");
     }
 
+    /** M-25 规则 2：持 tool:assign 可跨部门看到全部工具（仅工具域） */
+    @Test
+    void toolAssignSeesAllToolsAcrossDepts() {
+        LoginUser assigner = user(200L, PermissionCode.TOOL_ASSIGN);
+        assertTrue(checker.isToolAssign(assigner), "持 tool:assign 应判定为归属调整者");
+        assertTrue(checker.canAccess(new FakeTool(Scope.DEPT, 100L), assigner),
+                "持 tool:assign 可见其他部门的 DEPT 工具");
+        assertFalse(checker.isGlobalAdmin(assigner), "tool:assign 不等于全局管理员（不影响其他域）");
+    }
+
+    /** M-25 规则 5：上传人恒可见（工具被改到别的部门后，上传人仍能看到 / 管理） */
+    @Test
+    void uploaderAlwaysSeesOwnTool() {
+        ScopedResource movedToOtherDept = new OwnedTool(Scope.DEPT, 200L, 1L);
+        LoginUser uploader = user(999L);   // 上传人现在在别的部门
+        assertTrue(checker.canAccess(movedToOtherDept, uploader), "上传人恒可见自己上传的工具");
+
+        LoginUser otherUser = LoginUser.builder()
+                .userId(2L).username("other").deptId(300L).permissions(Set.of()).build();
+        assertFalse(checker.canAccess(movedToOtherDept, otherUser), "非上传人跨部门仍不可见");
+    }
+
     /** assertAccessible：不可见即抛 403（契约 §十二 → 1002） */
     @Test
     void assertAccessibleThrowsForbidden() {
@@ -132,38 +182,50 @@ class ScopeCheckerTest extends IntegrationTestBase {
         LoginUser admin = user(999L, PermissionCode.SYS_SETTING);
         LambdaQueryWrapper<TestToolEntity> w = checker.applyVisibility(
                 new LambdaQueryWrapper<>(), TestToolEntity::getScope,
-                TestToolEntity::getDeptId, admin);
+                TestToolEntity::getDeptId, TestToolEntity::getUploaderId, admin);
         assertEquals("", w.getTargetSql(), "全局管理员不应附加过滤条件");
     }
 
-    /** 普通用户：过滤下推到 SQL —— "(scope = PUBLIC OR dept_id = ?)" */
+    /** 普通用户：过滤下推到 SQL —— "(scope = PUBLIC OR dept_id = ? OR uploader_id = ?)" */
     @Test
     void applyVisibilityForNormalUserPushesFilterToSql() {
         LambdaQueryWrapper<TestToolEntity> w = checker.applyVisibility(
                 new LambdaQueryWrapper<>(), TestToolEntity::getScope,
-                TestToolEntity::getDeptId, user(100L));
+                TestToolEntity::getDeptId, TestToolEntity::getUploaderId, user(100L));
 
         String sql = w.getTargetSql();
         assertTrue(sql.contains("scope"), "过滤条件应含 scope，实际：" + sql);
         assertTrue(sql.contains("dept_id"), "过滤条件应含 dept_id，实际：" + sql);
+        assertTrue(sql.contains("uploader_id"), "过滤条件应含 uploader_id（M-25 上传人恒可见），实际：" + sql);
 
-        // 参数应含 PUBLIC 与当前用户部门
+        // 参数应含 PUBLIC、当前用户部门与当前用户 ID
         List<Object> params = w.getParamNameValuePairs().values().stream().toList();
         assertTrue(params.contains(Scope.PUBLIC), "参数应含 PUBLIC，实际：" + params);
         assertTrue(params.contains(100L), "参数应含用户部门，实际：" + params);
     }
 
-    /** 无部门用户：只保留 PUBLIC */
+    /** 无部门用户：公共 + 自己上传（M-25：无部门的上传人也必须能看到自己的工具） */
     @Test
-    void applyVisibilityForNoDeptUserKeepsOnlyPublic() {
+    void applyVisibilityForNoDeptUserKeepsPublicAndOwnTools() {
         LambdaQueryWrapper<TestToolEntity> w = checker.applyVisibility(
                 new LambdaQueryWrapper<>(), TestToolEntity::getScope,
-                TestToolEntity::getDeptId, user(null));
+                TestToolEntity::getDeptId, TestToolEntity::getUploaderId, user(null));
 
         String sql = w.getTargetSql();
         assertFalse(sql.contains("dept_id"), "无部门用户不应出现部门条件，实际：" + sql);
+        assertTrue(sql.contains("uploader_id"), "无部门用户仍须能看到自己上传的工具，实际：" + sql);
         List<Object> params = w.getParamNameValuePairs().values().stream().toList();
         assertTrue(params.contains(Scope.PUBLIC));
+    }
+
+    /** 持 tool:assign：不加任何过滤（跨部门看全部） */
+    @Test
+    void applyVisibilityForToolAssignAddsNoFilter() {
+        LambdaQueryWrapper<TestToolEntity> w = checker.applyVisibility(
+                new LambdaQueryWrapper<>(), TestToolEntity::getScope,
+                TestToolEntity::getDeptId, TestToolEntity::getUploaderId,
+                user(100L, PermissionCode.TOOL_ASSIGN));
+        assertEquals("", w.getTargetSql(), "持 tool:assign 不应附加过滤条件");
     }
 
     /** 过滤条件可继续追加其他条件（组合性：B3 的标签 / 关键词筛选要能叠加） */
@@ -171,7 +233,8 @@ class ScopeCheckerTest extends IntegrationTestBase {
     void applyVisibilityIsComposable() {
         LambdaQueryWrapper<TestToolEntity> w = new LambdaQueryWrapper<>();
         w.eq(TestToolEntity::getName, "demo");
-        checker.applyVisibility(w, TestToolEntity::getScope, TestToolEntity::getDeptId, user(100L));
+        checker.applyVisibility(w, TestToolEntity::getScope, TestToolEntity::getDeptId,
+                TestToolEntity::getUploaderId, user(100L));
 
         String sql = w.getTargetSql();
         assertTrue(sql.contains("name"), "应保留调用方追加的条件，实际：" + sql);

@@ -19,6 +19,10 @@ public class ToolDetailVO {
     private String intro;
     private String fileExt;
     private String scope;
+    /** 工具类型：FILE / LINK（v1.23） */
+    private String toolType;
+    /** 链接地址：仅 LINK 有值，FILE 为 null（v1.23） */
+    private String linkUrl;
     private List<ToolVO.TagItem> tags;
     private String uploaderName;
     private String deptName;

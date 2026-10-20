@@ -105,7 +105,7 @@ public class ToolTrashService {
         w.eq(ToolDO::getDeleted, ToolService.DELETED);
         if (ToolService.canManageTrash(user)) {
             // ★ 可见范围唯一入口：全局管理员不加条件 → 契约要求"返回全部部门的已删除工具"自动成立
-            toolService.applyVisibility(w, ToolDO::getScope, ToolDO::getDeptId, user);
+            toolService.applyVisibility(w, ToolDO::getScope, ToolDO::getDeptId, ToolDO::getUploaderId, user);
         } else {
             w.eq(ToolDO::getUploaderId, user.getUserId());
         }
@@ -150,7 +150,7 @@ public class ToolTrashService {
         LambdaQueryWrapper<ToolDO> w = Wrappers.lambdaQuery();
         w.select(ToolDO::getId);
         w.eq(ToolDO::getDeleted, ToolService.DELETED);
-        toolService.applyVisibility(w, ToolDO::getScope, ToolDO::getDeptId, user);
+        toolService.applyVisibility(w, ToolDO::getScope, ToolDO::getDeptId, ToolDO::getUploaderId, user);
         return toolMapper.selectList(w).stream().map(ToolDO::getId).toList();
     }
 

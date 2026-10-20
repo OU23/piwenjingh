@@ -10,7 +10,10 @@ import java.util.List;
 /**
  * 新建工具入参（契约 §9.4 ToolSaveDTO）。含首个版本信息。
  * 约束照契约：name ≤100、version ≤20、intro ≤200、readme ≤10000、dependency ≤500。
- * ⚠️ 不含 deptId —— 归属部门取当前登录用户（契约 §9.4）。
+ *
+ * <p><b>v1.23（M-25）</b>：新增**可选** {@code deptId} —— 持 {@code tool:assign} 者可指定归属部门；
+ * 不传 / 无该权限 → 取登录用户部门（原行为不变）。
+ * ⚠️ **不要给 deptId 加 {@code @NotBlank}**：它是选填，绝大多数调用方不会传。
  */
 @Data
 public class ToolSaveDTO {
@@ -46,6 +49,12 @@ public class ToolSaveDTO {
 
     @NotBlank(message = "可见范围不能为空")
     private String scope;
+
+    /**
+     * 归属部门 ID（**v1.23 新增**，选填）：**仅持 {@code tool:assign} 时生效**；
+     * 不传 / 无该权限 → 取当前登录用户部门。部门不存在 → 1004，已停用 → 1003。
+     */
+    private String deptId;
 
     @NotBlank(message = "文件标识不能为空")
     private String fileKey;

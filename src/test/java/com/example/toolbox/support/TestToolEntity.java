@@ -25,6 +25,9 @@ public class TestToolEntity {
     /** 归属部门 */
     private Long deptId;
 
+    /** 上传人（M-25：上传人恒可见规则需要该列下推 SQL） */
+    private Long uploaderId;
+
     /** 工具名称（供组合条件用例使用） */
     private String name;
 }

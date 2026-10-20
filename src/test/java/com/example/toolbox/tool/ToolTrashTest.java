@@ -316,7 +316,11 @@ class ToolTrashTest extends IntegrationTestBase {
         tool.setFileExt("zip");
         tool.setScope(scope);
         tool.setDeptId(deptId);
-        tool.setUploaderId(deptAUser == null ? 999_999L : deptAUser.getId());
+        // v1.23：上传人恒可见 —— 夹具必须让「别部门的工具」由**别人**上传，
+        // 否则 deptAUser 会因为"自己上传"而看到 / 删掉 deptB 的工具（掩盖跨部门隔离用例）。
+        tool.setUploaderId(deptA != null && deptA.equals(deptId)
+                ? (deptAUser == null ? 999_999L : deptAUser.getId())
+                : 888_888L);
         tool.setLatestVersion(version);
         tool.setFileSize(4L);
         tool.setDownloadCount(0);

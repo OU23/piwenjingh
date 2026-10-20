@@ -1,6 +1,7 @@
 package com.example.toolbox.tool.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.example.toolbox.common.constant.ToolType;
 import com.example.toolbox.common.util.DateTimeUtils;
 import com.example.toolbox.common.util.IdUtils;
 import com.example.toolbox.dept.entity.DeptDO;
@@ -48,6 +49,8 @@ public class ToolVoAssembler {
                 .intro(tool.getIntro())
                 .fileExt(tool.getFileExt())
                 .scope(tool.getScope())
+                .toolType(ToolType.of(tool.getToolType()))
+                .linkUrl(linkUrlOf(tool))
                 .tags(loadTags(tool.getId()))
                 .uploaderName(userName(tool.getUploaderId()))
                 .uploaderId(IdUtils.toStr(tool.getUploaderId()))
@@ -64,6 +67,7 @@ public class ToolVoAssembler {
         return ToolDetailVO.builder()
                 .id(base.getId()).name(base.getName()).latestVersion(base.getLatestVersion())
                 .intro(base.getIntro()).fileExt(base.getFileExt()).scope(base.getScope())
+                .toolType(base.getToolType()).linkUrl(base.getLinkUrl())
                 .tags(base.getTags()).uploaderName(base.getUploaderName()).deptName(base.getDeptName())
                 .fileSize(base.getFileSize()).downloadCount(base.getDownloadCount())
                 .updateTime(base.getUpdateTime())
@@ -91,6 +95,14 @@ public class ToolVoAssembler {
     }
 
     // ---------------- 关联数据 ----------------
+
+    /**
+     * 对外暴露的链接地址（v1.23）：**仅 LINK 类型**返回，{@code FILE} 恒为 {@code null}
+     * （契约 §6.5：即便历史脏数据里 {@code link_url} 有值也不外泄）。
+     */
+    private String linkUrlOf(ToolDO tool) {
+        return ToolType.isLink(tool.getToolType()) ? tool.getLinkUrl() : null;
+    }
 
     /** 工具标签（`{ id, name }[]`） */
     public List<ToolVO.TagItem> loadTags(Long toolId) {

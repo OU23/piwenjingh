@@ -234,12 +234,12 @@ class UserServiceTest extends IntegrationTestBase {
                 "非法编码导致失败时，原有权限点应保持不变");
     }
 
-    /** 权限点字典：8 个、分组、编码唯一 */
+    /** 权限点字典：9 个（v1.23 / M-25 新增 tool:assign）、分组、编码唯一 */
     @Test
     void permissionDictHasEightUniqueCodesInGroups() {
         List<String> codes = PermissionDict.allCodes();
-        assertEquals(8, codes.size(), "权限点应为 8 个");
-        assertEquals(8, codes.stream().distinct().count(), "权限点编码不得重复");
+        assertEquals(9, codes.size(), "权限点应为 9 个");
+        assertEquals(9, codes.stream().distinct().count(), "权限点编码不得重复");
         assertEquals(5, PermissionDict.GROUPS.size(), "分组应为 5 组");
         assertTrue(PermissionDict.isValidCode(PermissionCode.SYS_SETTING));
         assertFalse(PermissionDict.isValidCode("nope"));

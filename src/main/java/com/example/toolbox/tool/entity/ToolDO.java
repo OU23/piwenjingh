@@ -21,7 +21,7 @@ public class ToolDO implements ScopedResource {
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    /** 工具名称，全局唯一（不区分部门） */
+    /** 工具名称，**在「上传人维度」内唯一**（v1.21 / 数据模型 v1.4；不同上传人可同名并存） */
     private String name;
 
     /** 简介，≤200 */
@@ -42,7 +42,21 @@ public class ToolDO implements ScopedResource {
     /** 可见范围：DEPT / PUBLIC（契约 §13.2） */
     private String scope;
 
-    /** 归属部门（取上传人所属部门，后端写入） */
+    /**
+     * 工具类型（**M-25 / v1.23 新增**，数据模型 v1.6）：{@code FILE} 文件工具 / {@code LINK} 链接工具。
+     * 存量数据由 DB 默认值 {@code FILE} 兜底，应用层用 {@code ToolType.of()} 再归一化一次。
+     */
+    private String toolType;
+
+    /** 链接工具地址（**M-25 新增**）：仅 {@code tool_type = LINK} 时有值，{@code http/https}，≤512 */
+    private String linkUrl;
+
+    /**
+     * 归属部门。
+     *
+     * <p>默认取**上传人所属部门**；**v1.23 起**持 {@code tool:assign} 者可经
+     * {@code PUT /api/tools/{id}/dept} 调整为任意启用部门，语义扩展为「当前归属部门」。
+     */
     private Long deptId;
 
     /** 上传人 */

@@ -67,11 +67,11 @@ class SystemInitTest extends IntegrationTestBase {
         assertFalse(admin.getPassword().contains("admin123456"),
                 "密码必须以摘要存储，不得出现明文");
 
-        // ② 全部 8 个权限点
+        // ② 全部 9 个权限点（v1.23 / M-25 新增 tool:assign）
         Set<String> granted = userServicePermissionCodes(admin.getId());
         assertEquals(Set.copyOf(PermissionDict.allCodes()), granted,
-                "管理员应拥有全部权限点（8 个）");
-        assertEquals(8, PermissionDict.allCodes().size(), "权限点字典应为 8 个");
+                "管理员应拥有全部权限点（9 个）");
+        assertEquals(9, PermissionDict.allCodes().size(), "权限点字典应为 9 个");
 
         // ③ 默认部门，且管理员归入其中
         DeptDO dept = deptMapper.selectById(admin.getDeptId());

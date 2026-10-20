@@ -292,7 +292,8 @@ class ToolServiceTest extends IntegrationTestBase {
         ToolDetailVO detail = toolService.detail(toolId);
         assertEquals("工具A改名", detail.getName());
         assertEquals("新简介", detail.getIntro());
-        assertEquals("zip", detail.getFileExt());
+        // v1.23：编辑**忽略** fileExt（本期不改格式）—— 传入的 zip 不生效，仍为创建时的 py
+        assertEquals("py", detail.getFileExt(), "编辑不应改变文件格式");
         assertEquals(Scope.PUBLIC, detail.getScope());
         assertEquals(String.valueOf(deptA), detail.getDeptId(), "编辑不应改变归属部门");
         assertEquals(1, detail.getVersions().size(), "编辑不应新增版本");

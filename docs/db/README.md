@@ -16,6 +16,10 @@
 | `03-align-schema.sql` | **老库**列默认值 / `ON UPDATE` 对齐 + 零日期清理 | 🕘 **仅老库**（新库跑 `schema.sql` 已含） | `ALTER` 幂等 |
 | `04-add-tool-grant.sql` | **老库**增量：补 M-17 的 `tb_tool_grant` 表 | 🕘 **仅老库**（`schema.sql` 已含该表） | `CREATE TABLE IF NOT EXISTS` |
 | `05-add-storage-backend.sql` | **老库**增量：补 M-22 的 `tb_tool_version.storage_backend` **列**（文件落点） | 🕘 **仅老库**（`schema.sql` 已含该列） | `information_schema` 探测 + 动态 SQL |
+| `06-tool-version-delete.sql` | 工具名称唯一性改「按上传人」+（历史遗留）版本软删除列 | 🕘 **仅老库** | 探测 + 动态 SQL |
+| `07-revert-version-soft-delete.sql` | 回退版本软删除：去 `deleted` 列、恢复版本唯一键（M-24） | 🕘 跑过 `06` 的库必做 | 探测 + 动态 SQL |
+| `08-tool-type-and-link.sql` | **老库**增量：补 M-25 的 `tb_tool.tool_type` / `link_url` + 索引 | 🕘 **仅老库**（`schema.sql` 已含） | `information_schema` 探测 + 动态 SQL |
+| `09-grant-tool-assign.sql` | **数据**：给既有全局管理员（持 `sys:setting`）补发权限点 `tool:assign` | ⚠️ **升到 v1.23 必做**（否则管理员改部门 403） | `NOT EXISTS` 判重 |
 
 **关于命名与编号**：原 `01-init-tables.sql` 已按标准命名为 **`schema.sql`**（全量、幂等）；
 `02` / `03` / `04` **保留原编号文件名** —— 它们是被历史交付报告与运维记录直接引用的**增量脚本**，
@@ -59,6 +63,10 @@ mysql -u root -p toolbox < docs/db/02-seed-base.sql            # 可选：基础
 mysql -u root -p toolbox < docs/db/03-align-schema.sql         # 建议：列默认值 / ON UPDATE 对齐（库由旧版脚本建时必跑）
 mysql -u root -p toolbox < docs/db/04-add-tool-grant.sql       # 必做（M-17）：补 tb_tool_grant 表
 mysql -u root -p toolbox < docs/db/05-add-storage-backend.sql  # 必做（M-22）：补 tb_tool_version.storage_backend 列
+mysql -u root -p toolbox < docs/db/06-tool-version-delete.sql  # M-24：名称唯一性改「按上传人」
+mysql -u root -p toolbox < docs/db/07-revert-version-soft-delete.sql  # M-24 回退：去 deleted 列、恢复版本唯一键
+mysql -u root -p toolbox < docs/db/08-tool-type-and-link.sql   # 必做（M-25）：补 tb_tool.tool_type / link_url
+mysql -u root -p toolbox < docs/db/09-grant-tool-assign.sql    # 必做（M-25）：给既有管理员补发 tool:assign（跑完需重新登录）
 ```
 
 ⚠️ **症状特征**：**登录与列表正常，但上传 / 下载 / 可见范围等接口 500** —— 基本就是缺了某一期脚本。
@@ -89,6 +97,16 @@ SELECT table_name, column_name, column_default FROM information_schema.columns
 -- 期望：1 行（storage_backend | local）。**0 行 = 未跑 05-add-storage-backend.sql**（老库升级必查）
 SELECT column_name, column_default FROM information_schema.columns
  WHERE table_schema = 'toolbox' AND table_name = 'tb_tool_version' AND column_name = 'storage_backend';
+
+-- 期望：2 行（tool_type | FILE 默认、link_url）。**0 行 = 未跑 08-tool-type-and-link.sql**
+SELECT column_name, column_default FROM information_schema.columns
+ WHERE table_schema = 'toolbox' AND table_name = 'tb_tool'
+   AND column_name IN ('tool_type', 'link_url');
+
+-- 期望：每个全局管理员各 1 行。**0 行 = 未跑 09-grant-tool-assign.sql**（症状：调整归属部门 403）
+SELECT u.id, u.username FROM tb_user u
+  JOIN tb_user_permission p ON p.user_id = u.id
+ WHERE p.permission_code = 'tool:assign';
 ```
 
 ---

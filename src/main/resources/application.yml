@@ -60,6 +60,16 @@ toolbox:
     sts-duration-seconds: ${OSS_STS_DURATION_SECONDS:3600}
     sts-endpoint: ${OSS_STS_ENDPOINT:sts.aliyuncs.com}
 
+  # ---- 跨域（前端独立部署）----
+  # 前端与后端不同源时（如 http://192.168.34.21:5173 → http://192.168.34.57:8080）必须放行，
+  # 否则浏览器预检 OPTIONS 会因缺少 Access-Control-Allow-* 而失败，表现为"所有接口跨域错误"。
+  # 鉴权走 Authorization 头、不使用 Cookie，故默认 * 不构成 CSRF 面；
+  # **生产环境请用环境变量收紧**：CORS_ORIGIN_PATTERNS=https://toolbox.example.com
+  cors:
+    allowed-origin-patterns: ${CORS_ORIGIN_PATTERNS:*}
+    allow-credentials: false
+    max-age-seconds: 3600
+
   security:
     public-paths:
       - /api/auth/login

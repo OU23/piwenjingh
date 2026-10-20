@@ -6,6 +6,8 @@ import com.example.toolbox.common.result.R;
 import com.example.toolbox.common.util.IdUtils;
 import com.example.toolbox.security.RequiresPermission;
 import com.example.toolbox.tool.dto.DownloadTokenDTO;
+import com.example.toolbox.tool.dto.ToolDeptDTO;
+import com.example.toolbox.tool.dto.ToolLinkSaveDTO;
 import com.example.toolbox.tool.dto.ToolNameCheckDTO;
 import com.example.toolbox.tool.dto.ToolSaveDTO;
 import com.example.toolbox.tool.dto.ToolUpdateDTO;
@@ -55,7 +57,11 @@ public class ToolController {
     /** v1.17：定向授权变更通知（只推不关连接） */
     private final ToolGrantNotifier toolGrantNotifier;
 
-    /** 工具列表（检索 + 筛选 + 排序 + 分页，契约 §9.2） */
+    /**
+     * 工具列表（检索 + 筛选 + 排序 + 分页，契约 §9.2）。
+     *
+     * <p><b>v1.23</b>：新增 {@code toolType} 筛选（`ALL` 默认 / `FILE` / `LINK`，非法值 → 1003）。
+     */
     @GetMapping
     public R<PageResult<ToolVO>> list(@RequestParam(defaultValue = "1") int pageNum,
                                      @RequestParam(defaultValue = "20") int pageSize,
@@ -63,10 +69,11 @@ public class ToolController {
                                      @RequestParam(required = false) String tagIds,
                                      @RequestParam(required = false) String fileExt,
                                      @RequestParam(required = false) String scope,
+                                     @RequestParam(required = false) String toolType,
                                      @RequestParam(required = false) String sortBy,
                                      @RequestParam(required = false) String sortOrder) {
         return R.ok(toolQueryService.page(pageNum, pageSize, keyword, tagIds, fileExt,
-                scope, sortBy, sortOrder));
+                scope, toolType, sortBy, sortOrder));
     }
 
     /** 工具详情（含说明与版本列表） */
@@ -95,6 +102,18 @@ public class ToolController {
         return R.ok(toolWriteService.create(dto));
     }
 
+    /**
+     * 新建**链接工具**（契约 v1.23 §6.1，`POST /api/tools/link`）。
+     *
+     * <p>无文件、无版本：服务端**不创建** {@code tb_tool_version} 记录，出参只有 {@code toolId}。
+     * 权限点与文件工具相同（{@code tool:upload}）。
+     */
+    @PostMapping("/link")
+    @RequiresPermission(PermissionCode.TOOL_UPLOAD)
+    public R<Map<String, String>> createLink(@RequestBody @Valid ToolLinkSaveDTO dto) {
+        return R.ok(toolWriteService.createLink(dto));
+    }
+
     /** 为已有工具追加新版本 */
     @PostMapping("/{id}/versions")
     @RequiresPermission(PermissionCode.TOOL_UPLOAD)
@@ -113,6 +132,20 @@ public class ToolController {
     @PutMapping("/{id}")
     public R<Void> update(@PathVariable String id, @RequestBody @Valid ToolUpdateDTO dto) {
         toolWriteService.update(IdUtils.parse(id, "工具ID"), dto);
+        return R.ok();
+    }
+
+    /**
+     * 调整工具**归属部门**（契约 v1.23 §6.2，`PUT /api/tools/{id}/dept`）。
+     *
+     * <p>**独立接口，不并入** `PUT /{id}`（前端编辑页"先存内容、再存部门"）。
+     * 权限点 {@code tool:assign}；服务层另做一次"必须显式持有该权限点"的判定
+     * （`PermissionChecker` 对全局管理员有短路豁免，而契约要求本能力只认权限点）。
+     */
+    @PutMapping("/{id:\\d+}/dept")
+    @RequiresPermission(PermissionCode.TOOL_ASSIGN)
+    public R<Void> changeDept(@PathVariable String id, @RequestBody @Valid ToolDeptDTO dto) {
+        toolWriteService.changeDept(IdUtils.parse(id, "工具ID"), dto);
         return R.ok();
     }
 

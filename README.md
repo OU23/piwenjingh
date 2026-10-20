@@ -56,9 +56,13 @@ mysql -u root -p toolbox < docs/db/07-revert-version-soft-delete.sql
 
 # ⑧ 增量：tb_tool 加 tool_type / link_url（M-25 链接工具 + 归属部门调整；老库必做）
 mysql -u root -p toolbox < docs/db/08-tool-type-and-link.sql
+
+# ⑨ 数据：给既有全局管理员补发新权限点 tool:assign（M-25；**升到 v1.23 的库必做**）
+#    ⚠️ 不跑这个，管理员调「调整归属部门」会 403（老库的权限行还是 8 个）；跑完需重新登录
+mysql -u root -p toolbox < docs/db/09-grant-tool-assign.sql
 ```
 
-⚠️ **老库升级 = 按编号顺序执行 ②~⑧**（全部幂等，DDL 即时生效、**跑完无需重启后端**）。
+⚠️ **老库升级 = 按编号顺序执行 ②~⑨**（全部幂等，DDL 即时生效、**跑完无需重启后端**）。
 只跑 `schema.sql` **不会给已存在的表补列 / 补表** → 典型症状是**登录与列表正常，但上传 /
 下载 / 可见范围等接口 500**（日志 `Unknown column 'xxx'` 或 `Table 'xxx' doesn't exist`）。
 **交付时 `docs/db/` 必须整个目录带上服务器。**

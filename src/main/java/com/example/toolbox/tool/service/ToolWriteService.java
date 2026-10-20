@@ -3,15 +3,21 @@ package com.example.toolbox.tool.service;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.example.toolbox.common.constant.PermissionCode;
 import com.example.toolbox.common.constant.Scope;
+import com.example.toolbox.common.constant.StatusValue;
+import com.example.toolbox.common.constant.ToolType;
 import com.example.toolbox.common.exception.BusinessException;
 import com.example.toolbox.common.log.AuditLogger;
 import com.example.toolbox.common.result.Code;
 import com.example.toolbox.common.util.IdUtils;
+import com.example.toolbox.dept.entity.DeptDO;
+import com.example.toolbox.dept.mapper.DeptMapper;
 import com.example.toolbox.security.LoginUser;
 import com.example.toolbox.security.ScopeChecker;
 import com.example.toolbox.security.UserContext;
 import com.example.toolbox.storage.StorageService;
 import com.example.toolbox.tag.mapper.TagMapper;
+import com.example.toolbox.tool.dto.ToolDeptDTO;
+import com.example.toolbox.tool.dto.ToolLinkSaveDTO;
 import com.example.toolbox.tool.dto.ToolSaveDTO;
 import com.example.toolbox.tool.dto.ToolUpdateDTO;
 import com.example.toolbox.tool.dto.VersionSaveDTO;
@@ -30,20 +36,22 @@ import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * 工具写入服务（契约 §9.4）：新建 / 追加版本 / 编辑元数据。
+ * 工具写入服务（契约 §9.4 / v1.23 §6.1 §6.2 §6.4）：新建（文件 / 链接）/ 追加版本 / 编辑元数据 / 调整归属部门。
  *
  * <p>从 {@link ToolService} 拆出，职责边界：**只做写操作**（读与可见范围校验由
  * {@link ToolService} 提供，避免判定逻辑两处实现）。
  *
  * <p>约束：
  * <ul>
- *   <li>归属部门取当前登录用户，**不接受前端传入**；</li>
- *   <li>名称全局唯一 → 1005；同一工具内版本号唯一 → 1005；</li>
- *   <li>fileKey 无效 / 已占用 → 2005；</li>
+ *   <li>归属部门：默认取当前登录用户；**v1.23 起**持 {@code tool:assign} 者可在创建时指定
+ *       （{@code deptId}），或事后经 {@code changeDept} 调整；</li>
+ *   <li>名称在「上传人维度」唯一 → 1005；同一工具内版本号唯一 → 1005；</li>
+ *   <li>fileKey 无效 / 已占用 → 2005；**链接工具不校验 fileKey、不写版本表**；</li>
  *   <li>fileExt 统一小写（N-07）；版本号不做格式强校验（N-08）；</li>
  *   <li>原则 8：**不在事务中做文件 IO** —— requireFileKeyUsable 只查存在性。</li>
  * </ul>
@@ -52,10 +60,14 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class ToolWriteService {
 
+    /** 链接地址长度上限（契约 §6.5 / 数据模型 v1.6） */
+    private static final int LINK_URL_MAX_LENGTH = 512;
+
     private final ToolMapper toolMapper;
     private final ToolVersionMapper toolVersionMapper;
     private final ToolTagMapper toolTagMapper;
     private final TagMapper tagMapper;
+    private final DeptMapper deptMapper;
     private final StorageService storageService;
     private final ToolService toolService;
     private final ScopeChecker scopeChecker;
@@ -74,6 +86,9 @@ public class ToolWriteService {
         validateScope(dto.getScope());
         requireFileKeyUsable(dto.getFileKey());
 
+        // 归属部门（v1.23）：持 tool:assign 且传了 deptId → 校验后使用；否则取登录用户部门
+        Long deptId = resolveCreateDeptId(dto.getDeptId(), user);
+
         LocalDateTime now = LocalDateTime.now();
         ToolDO tool = new ToolDO();
         tool.setName(name);
@@ -83,7 +98,9 @@ public class ToolWriteService {
         tool.setPlatform(dto.getPlatform());
         tool.setDependency(dto.getDependency());
         tool.setScope(dto.getScope());
-        tool.setDeptId(user.getDeptId());          // 归属部门取登录用户，不接受前端传
+        tool.setToolType(ToolType.FILE);          // v1.23：文件工具（存量口径不变）
+        tool.setLinkUrl(null);
+        tool.setDeptId(deptId);
         tool.setUploaderId(user.getUserId());
         tool.setDownloadCount(0);
         tool.setDeleted(ToolService.NOT_DELETED);
@@ -107,11 +124,71 @@ public class ToolWriteService {
         toolMapper.updateById(tool);
         saveTags(tool.getId(), dto.getTagIds());
 
-        auditLogger.write(user.getUsername(), "TOOL_CREATE", "tool:" + tool.getId(), "OK");
+        auditLogger.write(user.getUsername(), "TOOL_CREATE",
+                "tool:" + tool.getId() + " type=" + ToolType.FILE, "OK");
 
         Map<String, String> result = new LinkedHashMap<>();
         result.put("toolId", IdUtils.toStr(tool.getId()));
         result.put("versionId", IdUtils.toStr(version.getId()));
+        return result;
+    }
+
+    /**
+     * 新建**链接工具**（契约 v1.23 §6.1，{@code POST /api/tools/link}），返回 { toolId }。
+     *
+     * <p>与 {@link #create} 的差别：**无文件、无版本** —— 不创建 {@code tb_tool_version} 记录，
+     * 按契约 §2.6 的字段约定落库：
+     * {@code latest_version_id = 0}、{@code latest_version = ''}、{@code file_size = 0}、{@code file_ext = ''}。
+     *
+     * <p>其余口径（名称唯一性按上传人、标签关联、归属部门、审计）与文件工具**完全一致**。
+     */
+    @Transactional
+    public Map<String, String> createLink(ToolLinkSaveDTO dto) {
+        LoginUser user = requireLogin();
+        String name = dto.getName().trim();
+
+        if (toolService.findByNameAndUploader(name, user.getUserId(), ToolService.NOT_DELETED) != null) {
+            throw new BusinessException(Code.CONFLICT, "工具名称已存在");
+        }
+        validateScope(dto.getScope());
+        // 协议白名单（http/https）+ 长度，非法 → 1003
+        String linkUrl = normalizeLinkUrl(dto.getLinkUrl(), true);
+        Long deptId = resolveCreateDeptId(dto.getDeptId(), user);
+
+        LocalDateTime now = LocalDateTime.now();
+        ToolDO tool = new ToolDO();
+        tool.setName(name);
+        tool.setIntro(dto.getIntro());
+        tool.setReadme(dto.getReadme());
+        tool.setFileExt("");                       // LINK 无文件格式
+        tool.setPlatform(dto.getPlatform());
+        tool.setDependency(dto.getDependency());
+        tool.setScope(dto.getScope());
+        tool.setToolType(ToolType.LINK);
+        tool.setLinkUrl(linkUrl);
+        tool.setDeptId(deptId);
+        tool.setUploaderId(user.getUserId());
+        tool.setLatestVersionId(0L);               // LINK 无版本
+        tool.setLatestVersion("");
+        tool.setFileSize(0L);
+        tool.setDownloadCount(0);
+        tool.setDeleted(ToolService.NOT_DELETED);
+        tool.setCreateTime(now);
+        tool.setUpdateTime(now);
+        try {
+            toolMapper.insert(tool);
+        } catch (DuplicateKeyException e) {
+            throw new BusinessException(Code.CONFLICT, "工具名称已存在");
+        }
+
+        // ⚠️ 不创建版本记录（链接工具不做版本历史）
+        saveTags(tool.getId(), dto.getTagIds());
+
+        auditLogger.write(user.getUsername(), "TOOL_CREATE",
+                "tool:" + tool.getId() + " type=" + ToolType.LINK, "OK");
+
+        Map<String, String> result = new LinkedHashMap<>();
+        result.put("toolId", IdUtils.toStr(tool.getId()));   // 无 versionId
         return result;
     }
 
@@ -152,7 +229,19 @@ public class ToolWriteService {
         return IdUtils.toStr(version.getId());
     }
 
-    /** 编辑工具元数据 */
+    /**
+     * 编辑工具元数据（契约 v1.23 §6.4）。
+     *
+     * <p><b>v1.23 三处口径调整</b>：
+     * <ol>
+     *   <li>{@code version}：**忽略** —— 不再更新 {@code latest_version}（原"传了就改"作废）；</li>
+     *   <li>{@code fileExt}：**忽略** —— 本期编辑不改格式（避免 FILE 工具被误改；LINK 恒为空）；</li>
+     *   <li>{@code linkUrl}：仅 {@code LINK} 可传，传了即覆盖；{@code FILE} 传了 → 1003。</li>
+     * </ol>
+     *
+     * <p>{@code name} 行为保持现状（接口层不新增"禁止改名"分支）；前端编辑页恒回传原名，
+     * 等价于不改名（方案 §3.4：重命名本期不做）。
+     */
     @Transactional
     public void update(Long toolId, ToolUpdateDTO dto) {
         LoginUser user = requireLogin();
@@ -170,17 +259,22 @@ public class ToolWriteService {
         }
         validateScope(dto.getScope());
 
+        boolean isLink = ToolType.isLink(tool.getToolType());
+        // 链接地址：仅 LINK 可传；FILE 传了非空值 → 1003（契约 §6.4）
+        if (dto.getLinkUrl() != null && !dto.getLinkUrl().isBlank()) {
+            if (!isLink) {
+                throw new BusinessException(Code.PARAM_INVALID, "文件工具不支持链接地址");
+            }
+            tool.setLinkUrl(normalizeLinkUrl(dto.getLinkUrl(), true));
+        }
+
         tool.setName(newName);
         tool.setIntro(dto.getIntro());
         tool.setReadme(dto.getReadme());
-        tool.setFileExt(normalizeExt(dto.getFileExt()));
         tool.setPlatform(dto.getPlatform());
         tool.setDependency(dto.getDependency());
         tool.setScope(dto.getScope());
-        // version 为工具"当前展示版本号"，不改动版本记录本身
-        if (dto.getVersion() != null && !dto.getVersion().isBlank()) {
-            tool.setLatestVersion(dto.getVersion().trim());
-        }
+        // ⚠️ 不写 fileExt / latestVersion（v1.23：编辑不改格式、不改版本号）
         tool.setUpdateTime(LocalDateTime.now());
         toolMapper.updateById(tool);
 
@@ -191,6 +285,61 @@ public class ToolWriteService {
         }
 
         auditLogger.write(user.getUsername(), "TOOL_UPDATE", "tool:" + toolId, "OK");
+    }
+
+    /**
+     * 调整工具**归属部门**（契约 v1.23 §6.2，{@code PUT /api/tools/{id}/dept}）。
+     *
+     * <p>只更新 {@code tb_tool.dept_id} + {@code update_time}，**不碰** {@code scope}、
+     * 定向授权、上传人、版本、{@code latest_*}、下载次数、回收站状态。
+     *
+     * <p>边界（方案 §2.1）：
+     * <ul>
+     *   <li>工具不存在 → 1004；**已删除（回收站内）→ 2004**（先恢复再改）；</li>
+     *   <li>部门不存在 → 1004；已停用 → 1003；</li>
+     *   <li>改成与当前相同 → 直接成功（幂等，不写审计）；</li>
+     *   <li>不做"部门变更历史表"，只写审计 {@code TOOL_DEPT_CHANGE}（带 from/to）。</li>
+     * </ul>
+     */
+    @Transactional
+    public void changeDept(Long toolId, ToolDeptDTO dto) {
+        LoginUser user = requireLogin();
+        // ⚠️ 方案歧义处理（§6.2 实现要点 1）：接口注解声明 tool:assign，
+        //    但全局 PermissionChecker 对 sys:setting 有短路豁免，而方案明确
+        //    "全局管理员若没有该权限点也不应能调" → 此处按**权限点显式**再判定一次，
+        //    即本能力只认 tool:assign（管理员需被显式授予该权限点）。
+        if (!user.getPermissions().contains(PermissionCode.TOOL_ASSIGN)) {
+            throw new BusinessException(Code.FORBIDDEN);
+        }
+        if (dto == null || dto.getDeptId() == null || dto.getDeptId().isBlank()) {
+            throw new BusinessException(Code.PARAM_INVALID, "部门ID不能为空");
+        }
+        Long targetDeptId = IdUtils.parse(dto.getDeptId(), "部门ID");
+
+        ToolDO tool = toolService.findById(toolId);
+        if (tool == null) {
+            throw new BusinessException(Code.NOT_FOUND, "工具不存在");
+        }
+        if (ToolService.isDeleted(tool)) {
+            // 回收站里的工具不允许改部门：先恢复再改
+            throw new BusinessException(Code.TOOL_DELETED);
+        }
+        requireEnabledDept(targetDeptId);
+
+        // 幂等：与当前部门相同 → 直接成功
+        if (targetDeptId.equals(tool.getDeptId())) {
+            return;
+        }
+
+        Long oldDeptId = tool.getDeptId();
+        ToolDO update = new ToolDO();
+        update.setId(toolId);
+        update.setDeptId(targetDeptId);
+        update.setUpdateTime(LocalDateTime.now());
+        toolMapper.updateById(update);
+
+        auditLogger.write(user.getUsername(), "TOOL_DEPT_CHANGE",
+                "tool:" + toolId + " from:" + oldDeptId + " to:" + targetDeptId, "OK");
     }
 
     // ---------------- 内部 ----------------
@@ -204,6 +353,9 @@ public class ToolWriteService {
      *   <li>全局管理员（{@code sys:setting}）**短路放行**（复用 {@link ScopeChecker#isGlobalAdmin}，R3 单点）。</li>
      * </ol>
      * 均不满足 → {@code 403}（{@link Code#FORBIDDEN}）。判定不查库：{@link LoginUser} 已携带权限快照。
+     *
+     * <p>⚠️ **v1.23**：{@code tool:assign} **不在此列** —— 该权限点只带来"改部门 / 看全部"，
+     * **不含**内容编辑与删除权（需求方 2026-10-19 明确）。
      */
     public void requireEditable(ToolDO tool, LoginUser user) {
         if (scopeChecker.isGlobalAdmin(user)) {
@@ -215,6 +367,65 @@ public class ToolWriteService {
         if (!isUploader && !isAdmin) {
             throw new BusinessException(Code.FORBIDDEN);
         }
+    }
+
+    /**
+     * 创建时的归属部门（v1.23 §6.1 / §6.2）：
+     * <ol>
+     *   <li>持 {@code tool:assign} **且**传了 {@code deptId} → 校验存在 + 启用后使用；</li>
+     *   <li>不持 {@code tool:assign} 却传了 → **忽略**，用自己部门（**不报错**，前端已按权限隐藏）；</li>
+     *   <li>都不传 → 用登录用户部门（原行为，完全不变）。</li>
+     * </ol>
+     * 无部门用户 → 1003（与「部门必填」一致，避免落到 DB NOT NULL 报 500）。
+     */
+    private Long resolveCreateDeptId(String rawDeptId, LoginUser user) {
+        if (rawDeptId != null && !rawDeptId.isBlank()
+                && user.getPermissions().contains(PermissionCode.TOOL_ASSIGN)) {
+            Long deptId = IdUtils.parse(rawDeptId, "部门ID");
+            requireEnabledDept(deptId);
+            return deptId;
+        }
+        if (user.getDeptId() == null) {
+            throw new BusinessException(Code.PARAM_INVALID, "当前账号未归属部门，无法创建工具");
+        }
+        return user.getDeptId();
+    }
+
+    /** 部门必须存在（1004）且启用（1003） */
+    private DeptDO requireEnabledDept(Long deptId) {
+        DeptDO dept = deptMapper.selectById(deptId);
+        if (dept == null) {
+            throw new BusinessException(Code.NOT_FOUND, "部门不存在");
+        }
+        if (dept.getStatus() == null || dept.getStatus() != StatusValue.ENABLED) {
+            throw new BusinessException(Code.PARAM_INVALID, "目标部门已停用");
+        }
+        return dept;
+    }
+
+    /**
+     * 链接地址校验 + 归一化（契约 §2.6 / §6.5）：**协议白名单**只允许 {@code http} / {@code https}，
+     * 拒绝 {@code javascript:} / {@code data:} 等；长度 ≤512。
+     *
+     * <p>空值处理：{@code required = true} → 1003；否则返回 {@code null}（表示"未传，保持原值"）。
+     */
+    private String normalizeLinkUrl(String raw, boolean required) {
+        String url = raw == null ? "" : raw.trim();
+        if (url.isEmpty()) {
+            if (required) {
+                throw new BusinessException(Code.PARAM_INVALID, "链接地址不能为空");
+            }
+            return null;
+        }
+        if (url.length() > LINK_URL_MAX_LENGTH) {
+            throw new BusinessException(Code.PARAM_INVALID,
+                    "链接地址不能超过 " + LINK_URL_MAX_LENGTH + " 字符");
+        }
+        String lower = url.toLowerCase(Locale.ROOT);
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+            throw new BusinessException(Code.PARAM_INVALID, "链接地址仅支持 http / https 协议");
+        }
+        return url;
     }
 
     /**
