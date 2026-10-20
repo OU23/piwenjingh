@@ -71,7 +71,9 @@ CREATE TABLE IF NOT EXISTS `tb_tool` (
   `platform`          varchar(50)  NULL     COMMENT '运行平台',
   `dependency`        varchar(500) NULL     COMMENT '依赖说明',
   `scope`             varchar(16)  NOT NULL COMMENT '可见范围：DEPT 本部门 / PUBLIC 全员',
-  `dept_id`           bigint       NOT NULL COMMENT '归属部门（取上传人所属部门）',
+  `tool_type`         varchar(8)   NOT NULL DEFAULT 'FILE' COMMENT '工具类型：FILE 文件工具 / LINK 链接工具（M-25）',
+  `link_url`          varchar(512) NULL     COMMENT '链接工具地址（仅 tool_type=LINK 有值；M-25）',
+  `dept_id`           bigint       NOT NULL COMMENT '归属部门（默认取上传人部门；持 tool:assign 可调整）',
   `uploader_id`       bigint       NOT NULL COMMENT '上传人',
   `latest_version_id` bigint       NOT NULL COMMENT '最新版本 ID（新增版本同事务更新）',
   `latest_version`    varchar(20)  NOT NULL COMMENT '最新版本号（冗余，供列表展示）',
@@ -83,7 +85,8 @@ CREATE TABLE IF NOT EXISTS `tb_tool` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_tool_name_uploader` (`name`, `uploader_id`),
   KEY `idx_tool_dept_scope_deleted` (`dept_id`, `scope`, `deleted`),
-  KEY `idx_tool_create_time` (`create_time`)
+  KEY `idx_tool_create_time` (`create_time`),
+  KEY `idx_tool_type` (`tool_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工具表（元数据，不含文件）';
 
 CREATE TABLE IF NOT EXISTS `tb_tool_version` (
