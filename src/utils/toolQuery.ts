@@ -15,6 +15,8 @@ export interface ToolFilters {
   fileExts: string[];
   /** 可见范围；空字符串 = 全部 */
   scope: string;
+  /** 工具类型（契约 v1.23）：`ALL` / `FILE` / `LINK`；`ALL` 不下发 */
+  toolType: string;
   sortBy: string;
   sortOrder: string;
 }
@@ -53,6 +55,7 @@ export const DEFAULT_FILTERS: ToolFilters = {
   tagIds: [],
   fileExts: [],
   scope: '',
+  toolType: 'ALL',
   sortBy: SORT_BY.CREATE_TIME,
   sortOrder: SORT_ORDER.DESC,
 };
@@ -101,6 +104,10 @@ export function buildToolListQuery(filters: ToolFilters, pageNum?: number, pageS
   if (filters.scope) {
     query.scope = filters.scope;
   }
+  // 类型筛选（契约 v1.23）：ALL 视为"不筛选"，不下发 —— 老后端不认识该参数也不会报错
+  if (filters.toolType && filters.toolType !== 'ALL') {
+    query.toolType = filters.toolType as 'FILE' | 'LINK';
+  }
   if (filters.sortBy) {
     query.sortBy = filters.sortBy;
   }
@@ -117,6 +124,7 @@ export function hasActiveFilters(filters: ToolFilters): boolean {
     filters.keyword.trim().length > 0 ||
     filters.tagIds.length > 0 ||
     filters.fileExts.length > 0 ||
-    filters.scope.length > 0
+    filters.scope.length > 0 ||
+    (filters.toolType !== '' && filters.toolType !== 'ALL')
   );
 }

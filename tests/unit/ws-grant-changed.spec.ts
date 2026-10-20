@@ -123,6 +123,8 @@ const TOOL: ToolVO = {
   fileSize: 2048,
   downloadCount: 7,
   updateTime: '2026-09-17 10:00:00',
+  toolType: 'FILE',
+  linkUrl: null,
 };
 
 const DETAIL: ToolDetailVO = {

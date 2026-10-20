@@ -22,7 +22,14 @@ const TOOL_API = {
   grants: (id: ID) => `/api/tools/${id}/grants`,
   /** 版本级删除（契约 v1.22 §9.6：**物理删除、不可恢复**） */
   version: (id: ID, versionId: ID) => `/api/tools/${id}/versions/${versionId}`,
+  /** 创建链接工具（契约 v1.23 §9.4 新增） */
+  link: '/api/tools/link',
+  /** 调整归属部门（契约 v1.23 §9.4 新增；权限 tool:assign） */
+  dept: (id: ID) => `/api/tools/${id}/dept`,
 } as const;
+
+/** 工具类型（契约 v1.23）：FILE 文件工具 / LINK 链接工具 */
+export type ToolType = 'FILE' | 'LINK';
 
 export interface TagBrief {
   id: ID;
@@ -46,6 +53,13 @@ export interface ToolVO {
   fileSize: number;
   downloadCount: number;
   updateTime: string;
+  /**
+   * 工具类型（契约 v1.23）。后端灰度期可能缺失 → 由 {@link normalizeTool} 兜底为 `FILE`。
+   * ⚠️ 页面请读归一化后的值，不要直接判断 `row.toolType === 'LINK'`（早期会漏判）。
+   */
+  toolType: ToolType;
+  /** 链接工具的目标地址（仅 LINK 有值；FILE 为 null） */
+  linkUrl: string | null;
 }
 
 export interface ToolVersionVO {
@@ -78,6 +92,11 @@ export interface ToolListQuery extends PageQuery {
   /** 文件格式，小写，多个用英文逗号分隔 */
   fileExt?: string;
   scope?: string;
+  /**
+   * 工具类型筛选（契约 v1.23 §9.2）：`ALL` / `FILE` / `LINK`。
+   * `ALL` 时**不下发**（{@link buildToolListQuery} 保证），保持请求干净。
+   */
+  toolType?: ToolType | 'ALL';
   sortBy?: string;
   sortOrder?: string;
 }
@@ -109,10 +128,35 @@ export interface ToolSaveDTO {
   dependency?: string;
   tagIds?: ID[];
   scope: string;
+  /**
+   * 归属部门（契约 v1.23，可选）：**仅持 `tool:assign` 时生效**；
+   * 不传 / 无权限 → 后端取登录用户部门（原行为）。
+   */
+  deptId?: ID;
   /** 由上传合并接口返回 */
   fileKey: string;
   fileName: string;
   fileSize: number;
+}
+
+/** 创建链接工具入参（契约 v1.23 §9.4）：无文件、无版本 */
+export interface ToolLinkSaveDTO {
+  name: string;
+  /** `http/https`，≤512（前后端都要校验） */
+  linkUrl: string;
+  intro: string;
+  readme?: string;
+  platform?: string;
+  dependency?: string;
+  tagIds?: ID[];
+  scope: string;
+  /** 仅持 `tool:assign` 时生效 */
+  deptId?: ID;
+}
+
+/** 调整归属部门入参（契约 v1.23 §9.4） */
+export interface ToolDeptDTO {
+  deptId: ID;
 }
 
 export interface VersionSaveDTO {
@@ -124,15 +168,20 @@ export interface VersionSaveDTO {
 }
 
 export interface ToolUpdateDTO {
+  /** 工具名称：**本期编辑页不改名**，恒传原名（后端 v1.23 保持现状） */
   name: string;
-  version: string;
+  /** 版本号：编辑页不提供；传原值即可（后端 v1.23 起忽略该字段） */
+  version?: string;
   intro: string;
   readme?: string;
-  fileExt: string;
+  /** 文件格式：编辑页只读；传原值（LINK 为空串，后端 v1.23 起非必填） */
+  fileExt?: string;
   platform?: string;
   dependency?: string;
   tagIds?: ID[];
   scope: string;
+  /** 链接地址（契约 v1.23，**仅 LINK 可传**；FILE 传了后端返回 `1003`） */
+  linkUrl?: string;
 }
 
 export interface ToolCreateResult {
@@ -140,12 +189,28 @@ export interface ToolCreateResult {
   versionId: ID;
 }
 
-export function listTools(query: ToolListQuery): Promise<PageResult<ToolVO>> {
-  return get<PageResult<ToolVO>>(TOOL_API.base, query as Record<string, unknown>);
+/**
+ * 归一化 v1.23 新增字段（**后端灰度期兜底，清除 mock 后保留**）
+ *
+ * 后端未上线 `toolType` / `linkUrl` 时，响应里这两个字段是 `undefined`。
+ * 直接判断 `row.toolType === 'LINK'` 会把链接工具误判成文件工具（下载按钮、版本列全错），
+ * 因此所有出口统一走这里：缺 `toolType` → `FILE`，缺 `linkUrl` → `null`。
+ */
+export function normalizeTool<T extends ToolVO>(tool: T): T {
+  return {
+    ...tool,
+    toolType: tool.toolType === 'LINK' ? 'LINK' : 'FILE',
+    linkUrl: tool.linkUrl ?? null,
+  } as T;
 }
 
-export function getToolDetail(id: ID): Promise<ToolDetailVO> {
-  return get<ToolDetailVO>(TOOL_API.byId(id));
+export async function listTools(query: ToolListQuery): Promise<PageResult<ToolVO>> {
+  const page = await get<PageResult<ToolVO>>(TOOL_API.base, query as Record<string, unknown>);
+  return { ...page, list: page.list.map(normalizeTool) };
+}
+
+export async function getToolDetail(id: ID): Promise<ToolDetailVO> {
+  return normalizeTool(await get<ToolDetailVO>(TOOL_API.byId(id)));
 }
 
 export function listToolVersions(id: ID): Promise<ToolVersionVO[]> {
@@ -174,6 +239,22 @@ export function createToolVersion(id: ID, data: VersionSaveDTO): Promise<ID> {
 
 export function updateTool(id: ID, data: ToolUpdateDTO): Promise<null> {
   return put<null>(TOOL_API.byId(id), data);
+}
+
+/**
+ * 创建链接工具（契约 v1.23）：无文件、无版本。
+ * 名称为空/超长、URL 非 `http(s)` 等非法入参由后端返回 `1003`；前端提交前先本地校验。
+ */
+export function createLinkTool(data: ToolLinkSaveDTO): Promise<{ toolId: ID }> {
+  return post<{ toolId: ID }>(TOOL_API.link, data);
+}
+
+/**
+ * 调整工具归属部门（契约 v1.23）：需 `tool:assign`。
+ * 与内容编辑**分开调用**（编辑页先保存内容、再调本接口）。
+ */
+export function updateToolDept(id: ID, deptId: ID): Promise<null> {
+  return put<null>(TOOL_API.dept(id), { deptId } as ToolDeptDTO);
 }
 
 /** 删除工具（软删除，可从"已删除"列表恢复） */

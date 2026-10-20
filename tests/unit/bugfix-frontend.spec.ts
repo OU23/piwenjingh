@@ -68,6 +68,8 @@ const TOOL: ToolVO = {
   fileSize: 2048,
   downloadCount: 7,
   updateTime: '2026-09-17 10:00:00',
+  toolType: 'FILE',
+  linkUrl: null,
 };
 
 const USER = {
@@ -94,6 +96,8 @@ const CANDIDATE_TOOL = {
   fileSize: 1024,
   downloadCount: 3,
   updateTime: '2026-09-17 10:00:00',
+  toolType: 'FILE',
+  linkUrl: null,
 };
 
 function page(list: unknown[]): { list: unknown[]; total: number; pageNum: number; pageSize: number } {

@@ -37,6 +37,8 @@ const VALUES: ToolMetaValues = {
   dependency: '',
   tagIds: ['1', '2'],
   scope: 'DEPT',
+  deptId: '',
+  linkUrl: '',
 };
 
 const UPLOAD = { fileKey: 'file-key-1', fileName: 'demo.zip', fileSize: 2048 };

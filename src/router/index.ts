@@ -44,6 +44,12 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/views/tool/ToolDetailView.vue'),
       },
       {
+        // M-25：独立编辑页（名称/版本号只读；入口由列表行按判权显隐）
+        path: 'tools/:id/edit',
+        name: 'tool-edit',
+        component: () => import('@/views/tool/ToolEditView.vue'),
+      },
+      {
         path: 'upload',
         name: 'tool-upload',
         component: () => import('@/views/tool/UploadView.vue'),

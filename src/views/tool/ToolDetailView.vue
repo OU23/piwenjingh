@@ -14,6 +14,7 @@ import { BizCode, type ID } from '@/api/types';
 import { PERMISSION } from '@/constants/permissions';
 import { useUserStore } from '@/stores/user';
 import { formatFileSize } from '@/utils/format';
+import { useToolEditPermission } from '@/utils/toolPermission';
 
 /**
  * 工具详情：基本信息 + 使用说明 + 版本列表（可下载最新版或指定版本）
@@ -33,6 +34,9 @@ const canDownload = computed(() => userStore.has(PERMISSION.TOOL_DOWNLOAD));
 const canUpload = computed(() => userStore.has(PERMISSION.TOOL_UPLOAD));
 /** 跨部门定向授权入口（契约 §9.8，v1.7） */
 const canGrant = computed(() => userStore.has(PERMISSION.USER_GRANT));
+/** M-25：链接工具（无版本、无文件，展示"打开链接"） */
+const isLink = computed(() => detail.value?.toolType === 'LINK');
+const canEditTool = useToolEditPermission();
 
 const grantVisible = ref(false);
 const grantSubmitting = ref(false);
@@ -132,6 +136,14 @@ function goUploadNewVersion(): void {
   void router.push({ name: 'tool-upload', query: { toolId: detail.value.id } });
 }
 
+/** 编辑工具元数据（M-25）：独立编辑页 */
+function goEdit(): void {
+  if (!detail.value) {
+    return;
+  }
+  void router.push({ name: 'tool-edit', params: { id: detail.value.id } });
+}
+
 watch(toolId, () => {
   void fetchDetail();
 });
@@ -181,27 +193,47 @@ onUnmounted(() => {
       <div class="tb-card tb-detail__head">
         <div class="tb-detail__title">
           <span class="tb-detail__name">{{ detail.name }}</span>
-          <el-tag size="small">{{ detail.latestVersion }}</el-tag>
-          <span class="tb-muted">{{ formatFileSize(detail.fileSize) }}</span>
+          <el-tag v-if="isLink" size="small" type="success">链接</el-tag>
+          <template v-else>
+            <el-tag size="small">{{ detail.latestVersion }}</el-tag>
+            <span class="tb-muted">{{ formatFileSize(detail.fileSize) }}</span>
+          </template>
         </div>
 
         <div class="tb-detail__ops">
+          <!-- M-25：链接工具直接打开（无文件、无下载次数），文件工具保持下载按钮 -->
+          <a
+            v-if="isLink && detail.linkUrl"
+            class="tb-detail__open"
+            :href="detail.linkUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            打开链接
+          </a>
           <DownloadButton
-            v-if="canDownload"
+            v-else-if="canDownload"
             :tool-id="detail.id"
             :suggested-name="suggestedName"
             @done="fetchDetail"
           />
+          <el-button v-if="canEditTool(detail)" @click="goEdit">编辑</el-button>
           <el-button v-if="canGrant && detail.scope !== 'PUBLIC'" @click="openGrant">授权</el-button>
-          <el-button v-if="canUpload" @click="goUploadNewVersion">上传新版本</el-button>
+          <el-button v-if="canUpload && !isLink" @click="goUploadNewVersion">上传新版本</el-button>
         </div>
+      </div>
+
+      <div v-if="isLink && detail.linkUrl" class="tb-card">
+        <div class="tb-title">链接地址</div>
+        <div class="tb-detail__url">{{ detail.linkUrl }}</div>
       </div>
 
       <div class="tb-card">
         <ToolInfoPanel :detail="detail" />
       </div>
 
-      <div v-if="SHOW_VERSION_LIST" class="tb-card">
+      <!-- 链接工具没有版本历史（M-25 需求明确） -->
+      <div v-if="SHOW_VERSION_LIST && !isLink" class="tb-card">
         <div class="tb-title">版本列表</div>
         <ToolVersionTable
           :tool-id="detail.id"
@@ -257,5 +289,29 @@ onUnmounted(() => {
   align-items: center;
   gap: var(--tb-gap-sm);
   flex-shrink: 0;
+}
+
+/* M-25：链接工具的「打开链接」（与 el-button 视觉对齐） */
+.tb-detail__open {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 15px;
+  border: 1px solid var(--el-color-primary);
+  border-radius: var(--el-border-radius-base);
+  color: var(--el-color-primary);
+  font-size: var(--tb-font-sm);
+  text-decoration: none;
+}
+
+.tb-detail__open:hover {
+  background: var(--el-color-primary-light-9);
+}
+
+.tb-detail__url {
+  font-family: var(--tb-font-mono, monospace);
+  font-size: var(--tb-font-sm);
+  word-break: break-all;
+  color: var(--tb-text-2);
 }
 </style>

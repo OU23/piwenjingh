@@ -75,6 +75,8 @@ const TOOL: ToolVO = {
   fileSize: 2048,
   downloadCount: 7,
   updateTime: '2026-09-17 10:00:00',
+  toolType: 'FILE',
+  linkUrl: null,
 };
 
 /** 详情比列表多 readme / platform / dependency —— 正是"必须先取详情"的原因 */

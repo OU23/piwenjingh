@@ -73,6 +73,8 @@ const TOOL: ToolVO = {
   fileSize: 2048,
   downloadCount: 7,
   updateTime: '2026-09-17 10:00:00',
+  toolType: 'FILE',
+  linkUrl: null,
 };
 
 /** 已授权用户（刻意**不在**候选结果里，用于验证"置顶保留不丢勾选"） */

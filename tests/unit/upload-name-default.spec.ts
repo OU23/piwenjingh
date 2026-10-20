@@ -151,6 +151,9 @@ describe('上传页名称预填（A34）', () => {
     await pickFile(wrapper, new File([new Uint8Array(1024)], '完全不同的名字.zip'));
 
     // 版本模式下名称只读展示，且应为工具原名（展开合并保留了 metaInitial.name）
-    expect(wrapper.get('.tb-meta__readonly').text()).toBe('原工具名');
+    // M-25：只读名称由纯文本改为 readonly 输入框（视觉与其他字段一致），断言改读 input.value
+    const nameInput = wrapper.get('.tb-meta__name-readonly input').element as HTMLInputElement;
+    expect(nameInput.readOnly).toBe(true);
+    expect(nameInput.value).toBe('原工具名');
   });
 });

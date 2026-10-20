@@ -27,6 +27,12 @@ const props = withDefaults(
     fileSize?: number;
     submitting?: boolean;
     errorMessage?: string;
+    /** 部门可选项（M-25）：仅 `tool:assign` 时才需要传 */
+    deptOptions?: { id: string; name: string }[];
+    /** 是否可指定归属部门（M-25，`tool:assign`） */
+    canAssign?: boolean;
+    /** 链接工具模式（M-25）：无版本号/文件格式，改为填写链接地址 */
+    linkMode?: boolean;
   }>(),
   {
     initial: null,
@@ -35,6 +41,9 @@ const props = withDefaults(
     fileSize: 0,
     submitting: false,
     errorMessage: '',
+    deptOptions: () => [],
+    canAssign: false,
+    linkMode: false,
   },
 );
 
@@ -43,6 +52,10 @@ const emit = defineEmits<{ submit: [values: ToolMetaValues]; cancel: []; change:
 const form = reactive<ToolMetaValues>(createEmptyToolMeta());
 
 const showFullForm = computed(() => props.mode !== 'version');
+/** 只有"新建"才可编辑名称（M-25：编辑页名称只读） */
+const isCreate = computed(() => props.mode === 'create');
+/** 归属部门：新建/编辑且持 `tool:assign` */
+const showDept = computed(() => props.canAssign && props.mode !== 'version');
 const scopeOptions = computed(() => [SCOPE.DEPT, SCOPE.PUBLIC].map((value) => ({ value, label: SCOPE_LABEL[value] })));
 
 watch(
@@ -72,6 +85,7 @@ function handleSubmit(): void {
     platform: form.platform.trim(),
     dependency: form.dependency.trim(),
     tagIds: [...form.tagIds],
+    linkUrl: form.linkUrl.trim(),
   });
 }
 </script>
@@ -85,7 +99,7 @@ function handleSubmit(): void {
     </div>
 
     <div class="tb-meta__grid">
-      <div v-if="showFullForm" class="tb-meta__item">
+      <div v-if="isCreate" class="tb-meta__item">
         <label class="tb-meta__label" for="meta-name">工具名称 <em>*</em></label>
         <el-input
           id="meta-name"
@@ -96,11 +110,25 @@ function handleSubmit(): void {
       </div>
 
       <div v-else class="tb-meta__item">
-        <span class="tb-meta__label">工具名称</span>
-        <div class="tb-meta__readonly">{{ props.initial?.name || '—' }}</div>
+        <span class="tb-meta__label">工具名称{{ mode === 'edit' ? '（不可修改）' : '' }}</span>
+        <!-- 只读也用 el-input：与其他字段同样的边框与高度，视觉上更整齐（readonly 而非 disabled，避免变灰） -->
+        <el-input class="tb-meta__name-readonly" :model-value="props.initial?.name || '—'" readonly />
       </div>
 
-      <div class="tb-meta__item">
+      <!-- M-25：链接地址（仅 LINK 类型） -->
+      <div v-if="props.linkMode" class="tb-meta__item is-full">
+        <label class="tb-meta__label" for="meta-link">链接地址 <em>*</em></label>
+        <el-input
+          id="meta-link"
+          v-model="form.linkUrl"
+          :maxlength="512"
+          placeholder="https://example.com/tool"
+        />
+        <span class="tb-meta__label">仅支持 http / https</span>
+      </div>
+
+      <!-- M-25：编辑页不提供版本号；链接工具也没有版本号 -->
+      <div v-if="mode !== 'edit' && !props.linkMode" class="tb-meta__item">
         <label class="tb-meta__label" for="meta-version">版本号 <em>*</em></label>
         <el-input
           id="meta-version"
@@ -111,7 +139,7 @@ function handleSubmit(): void {
       </div>
 
       <template v-if="showFullForm">
-        <div class="tb-meta__item">
+        <div v-if="!props.linkMode" class="tb-meta__item">
           <span class="tb-meta__label">文件格式</span>
           <!-- 格式由上传文件名自动识别，不可手选；用只读输入框呈现，样式与同行字段一致 -->
           <el-input :model-value="form.fileExt ? `.${form.fileExt}` : '—'" readonly />
@@ -120,6 +148,14 @@ function handleSubmit(): void {
         <div class="tb-meta__item">
           <span class="tb-meta__label">运行平台</span>
           <el-input v-model="form.platform" placeholder="如：Windows / Linux / 跨平台" />
+        </div>
+
+        <!-- M-25：归属部门（仅 tool:assign）。空值 = 不指定，后端取登录用户部门 -->
+        <div v-if="showDept" class="tb-meta__item">
+          <span class="tb-meta__label">归属部门</span>
+          <el-select v-model="form.deptId" placeholder="默认本部门" clearable>
+            <el-option v-for="dept in props.deptOptions" :key="dept.id" :label="dept.name" :value="dept.id" />
+          </el-select>
         </div>
 
         <div class="tb-meta__item">
@@ -236,11 +272,6 @@ function handleSubmit(): void {
 .tb-meta__label em {
   color: var(--tb-danger);
   font-style: normal;
-}
-
-.tb-meta__readonly {
-  font-size: var(--tb-font-sm);
-  padding: var(--tb-gap-xs) 0;
 }
 
 .tb-meta__error {

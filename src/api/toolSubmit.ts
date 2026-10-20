@@ -96,6 +96,8 @@ export async function submitTool(options: SubmitToolOptions): Promise<SubmitOutc
     dependency: values.dependency.trim() || undefined,
     tagIds: values.tagIds.length > 0 ? values.tagIds : undefined,
     scope: values.scope,
+    // M-25：仅持 tool:assign 时页面才会填；空 = 不指定，后端取登录用户部门
+    deptId: values.deptId || undefined,
     fileKey: upload.fileKey,
     fileName: upload.fileName,
     fileSize: upload.fileSize,

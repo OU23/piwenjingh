@@ -53,6 +53,8 @@ const DETAIL: ToolDetailVO = {
   downloadCount: 7,
   createTime: '2026-09-01 09:00:00',
   updateTime: '2026-09-17 10:00:00',
+  toolType: 'FILE',
+  linkUrl: null,
   versions: [
     {
       id: 'v2',
@@ -157,7 +159,11 @@ describe('工具详情页', () => {
     mocks.getToolDetail.mockResolvedValue(DETAIL);
 
     const withoutPermission = await mountDetail([]);
-    expect(withoutPermission.findAll('.tb-detail__ops button').length).toBe(0);
+    // M-25：详情页新增「编辑」入口，按"上传人本人 / 管理员"判权，**不依赖权限点** ——
+    // 因此这里不再断言"ops 区 0 个按钮"，而是断言两个按权限点显隐的动作不可见
+    // （属"新增入口"的行为变更，断言随行为更新；未削弱原意）
+    expect(withoutPermission.get('.tb-detail__ops').text()).not.toContain('下载');
+    expect(withoutPermission.get('.tb-detail__ops').text()).not.toContain('上传新版本');
 
     const withDownload = await mountDetail(['tool:download']);
     expect(withDownload.get('.tb-detail__ops').text()).toContain('下载');

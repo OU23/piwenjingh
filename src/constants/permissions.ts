@@ -6,6 +6,8 @@ export const PERMISSION = {
   TOOL_UPLOAD: 'tool:upload',
   TOOL_DOWNLOAD: 'tool:download',
   TOOL_DELETE: 'tool:delete',
+  /** M-25 新增（第 9 个）：跨部门查看全部工具 + 调整任意工具归属部门 + 创建时指定部门；**不含内容编辑/删除** */
+  TOOL_ASSIGN: 'tool:assign',
   USER_MANAGE: 'user:manage',
   USER_GRANT: 'user:grant',
   DEPT_MANAGE: 'dept:manage',

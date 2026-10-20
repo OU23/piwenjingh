@@ -6,6 +6,7 @@ import { PERMISSION } from '@/constants/permissions';
 import type { ToolVO } from '@/api/tool';
 import { useUserStore } from '@/stores/user';
 import { formatDateTime, formatFileSize } from '@/utils/format';
+import { useToolEditPermission } from '@/utils/toolPermission';
 
 /**
  * 工具列表表格（列口径见 docs/接口契约.md §9.3 ToolVO）
@@ -17,6 +18,8 @@ const emit = defineEmits<{
   downloaded: [];
   /** 行内删除（软删除，进回收站） */
   delete: [row: ToolVO];
+  /** 行内「编辑」：进入独立编辑页（P20 / T6） */
+  edit: [row: ToolVO];
   /** 行内「授权」（跨部门定向授权，契约 §9.8） */
   grant: [row: ToolVO];
   /** 行内「可见范围」变更（需求 11 / P14，DEPT ↔ PUBLIC） */
@@ -27,8 +30,6 @@ const emit = defineEmits<{
 
 const userStore = useUserStore();
 
-/** 双权限管理员（`user:manage` + `user:grant`，AND） */
-const canManageAll = computed(() => userStore.has(PERMISSION.USER_MANAGE) && userStore.has(PERMISSION.USER_GRANT));
 const canGrant = computed(() => userStore.has(PERMISSION.USER_GRANT));
 /**
  * 「可见范围」入口显隐（契约 v1.15 / P15）：仅**同时持 `user:manage` + `user:grant`** 渲染。
@@ -38,16 +39,11 @@ const canGrant = computed(() => userStore.has(PERMISSION.USER_GRANT));
 const canChangeScope = computed(() => userStore.has(PERMISSION.USER_MANAGE) && userStore.has(PERMISSION.USER_GRANT));
 
 /**
- * 按行判定「可删除」（契约 v1.21 §9.6）：上传人本人 或 双权限管理员 或 全局管理员。
- * ⚠️ 不再由 `tool:delete` 控制 —— 该权限点只管"批量删 / 彻底删 / 清空"等管理动作。
+ * 按行判定「可编辑 / 可删除」（契约 v1.21 §9.6 / M-25）：上传人本人 / 双权限管理员 / 全局管理员。
+ * 口径统一收敛在 `useToolEditPermission`（列表、详情、编辑页共用，避免三处漂移）。
+ * ⚠️ `tool:delete` 只管"批量删 / 彻底删 / 清空"等管理动作。
  */
-function canManageRow(row: ToolVO): boolean {
-  if (userStore.has(PERMISSION.SYS_SETTING) || canManageAll.value) {
-    return true;
-  }
-  const me = userStore.user?.userId;
-  return me != null && row.uploaderId != null && String(row.uploaderId) === String(me);
-}
+const canManageRow = useToolEditPermission();
 
 const MAX_VISIBLE_TAGS = 3;
 
@@ -74,10 +70,20 @@ function suggestedName(row: ToolVO): string {
     <!-- M-24：上传人列置于名称之前（同名不同人靠此区分，GitHub 模式） -->
     <el-table-column prop="uploaderName" label="上传人" width="110" show-overflow-tooltip />
     <el-table-column prop="name" label="名称" min-width="180" show-overflow-tooltip />
-    <el-table-column prop="latestVersion" label="版本" width="90" />
+    <!-- M-25：类型列（FILE 显示"工具"、LINK 显示"链接"） -->
+    <el-table-column label="类型" width="80">
+      <template #default="{ row }">
+        <el-tag size="small" :type="row.toolType === 'LINK' ? 'success' : 'info'">
+          {{ row.toolType === 'LINK' ? '链接' : '工具' }}
+        </el-tag>
+      </template>
+    </el-table-column>
+    <el-table-column label="版本" width="90">
+      <template #default="{ row }">{{ row.toolType === 'LINK' ? '—' : row.latestVersion || '—' }}</template>
+    </el-table-column>
     <el-table-column label="格式" width="90">
       <template #default="{ row }">
-        <span>{{ row.fileExt ? `.${row.fileExt}` : '—' }}</span>
+        <span>{{ row.toolType === 'LINK' ? '—' : row.fileExt ? `.${row.fileExt}` : '—' }}</span>
       </template>
     </el-table-column>
     <el-table-column label="标签" min-width="160">
@@ -96,22 +102,36 @@ function suggestedName(row: ToolVO): string {
     </el-table-column>
     <el-table-column prop="deptName" label="归属部门" width="110" show-overflow-tooltip />
     <el-table-column label="大小" width="100">
-      <template #default="{ row }">{{ formatFileSize(row.fileSize) }}</template>
+      <template #default="{ row }">
+        {{ row.toolType === 'LINK' ? '—' : formatFileSize(row.fileSize) }}
+      </template>
     </el-table-column>
     <!-- M-23：不再展示「下载次数」（该字段实为签发次数，非下载成功次数，见方案 §2.7） -->
     <el-table-column label="更新时间" width="170">
       <template #default="{ row }">{{ formatDateTime(row.updateTime) }}</template>
     </el-table-column>
-    <el-table-column label="操作" width="320" fixed="right">
+    <el-table-column label="操作" width="390" fixed="right">
       <template #default="{ row }">
         <div class="tb-table__ops">
           <router-link class="tb-table__link" :to="{ name: 'tool-detail', params: { id: row.id } }">详情</router-link>
+          <!-- M-25：编辑入口（按行判权，与删除同口径；名称/版本号在编辑页只读） -->
+          <el-button v-if="canManageRow(row)" link type="primary" @click="emit('edit', row)">编辑</el-button>
+          <!-- 文件工具：下载；链接工具：直接打开（链接不占下载额度、不校验 tool:download） -->
           <DownloadButton
-            v-if="userStore.has(PERMISSION.TOOL_DOWNLOAD)"
+            v-if="row.toolType !== 'LINK' && userStore.has(PERMISSION.TOOL_DOWNLOAD)"
             :tool-id="row.id"
             :suggested-name="suggestedName(row)"
             @done="emit('downloaded')"
           />
+          <a
+            v-else-if="row.toolType === 'LINK' && row.linkUrl"
+            class="tb-table__link"
+            :href="row.linkUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            打开链接
+          </a>
           <el-button v-if="canGrant && row.scope !== 'PUBLIC'" link type="primary" @click="emit('grant', row)">授权</el-button>
           <!-- 可见范围变更（需求 11 / P14）：仅持 tool:upload 显示；当前档位置灰，选另一档触发变更 -->
           <el-dropdown

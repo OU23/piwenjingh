@@ -142,6 +142,11 @@ async function handleSaveGrants(payload: { userIds: ID[] }): Promise<void> {
   }
 }
 
+/** 行内「编辑」：进入独立编辑页（P20 / T6；判权由 ToolTable 按行显隐） */
+function openEdit(row: ToolVO): void {
+  void router.push({ name: 'tool-edit', params: { id: row.id } });
+}
+
 /** 行内删除：软删除（进回收站，可由管理员恢复） */
 async function handleDelete(row: ToolVO): Promise<void> {
   try {
@@ -219,16 +224,16 @@ async function handleScopeChange(row: ToolVO, scope: ScopeValue): Promise<void> 
 
   try {
     const detail = await getToolDetail(row.id);
+    // M-25：LINK 没有版本号与文件格式，不传这两个字段（后端 v1.23 起非必填）
     await updateTool(row.id, {
       name: detail.name,
-      version: detail.latestVersion,
       intro: detail.intro,
       readme: detail.readme ?? undefined,
-      fileExt: detail.fileExt,
       platform: detail.platform ?? undefined,
       dependency: detail.dependency ?? undefined,
       tagIds: detail.tags.map((tag) => tag.id),
       scope,
+      ...(row.toolType === 'LINK' ? {} : { version: detail.latestVersion, fileExt: detail.fileExt }),
     });
     ElMessage.success(`「${row.name}」可见范围已更新为「${SCOPE_LABEL[scope]}」`);
     await fetchList();
@@ -315,6 +320,7 @@ onUnmounted(() => {
         :list="list"
         :selectable="canDelete"
         @downloaded="fetchList"
+        @edit="openEdit"
         @delete="handleDelete"
         @grant="openGrant"
         @scope-change="handleScopeChange"

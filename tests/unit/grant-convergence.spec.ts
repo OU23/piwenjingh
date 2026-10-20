@@ -83,6 +83,8 @@ function makeTool(id: string, name: string, scope: string, deptName: string): To
     fileSize: 1024,
     downloadCount: 0,
     updateTime: '2026-09-17 10:00:00',
+    toolType: 'FILE',
+    linkUrl: null,
   };
 }
 

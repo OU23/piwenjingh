@@ -22,6 +22,7 @@ const draft = reactive<ToolFilters>({
   tagIds: [...props.filters.tagIds],
   fileExts: [...props.filters.fileExts],
   scope: props.filters.scope,
+  toolType: props.filters.toolType,
   sortBy: props.filters.sortBy,
   sortOrder: props.filters.sortOrder,
 });
@@ -33,6 +34,7 @@ watch(
     draft.tagIds = [...next.tagIds];
     draft.fileExts = [...next.fileExts];
     draft.scope = next.scope;
+    draft.toolType = next.toolType;
     draft.sortBy = next.sortBy;
     draft.sortOrder = next.sortOrder;
   },
@@ -51,12 +53,20 @@ const scopeOptions: { value: string; label: string }[] = [
   { value: SCOPE.PUBLIC, label: SCOPE_LABEL[SCOPE.PUBLIC] },
 ];
 
+/** 类型筛选（契约 v1.23）：文件工具 / 链接工具 */
+const toolTypeOptions: { value: string; label: string }[] = [
+  { value: 'ALL', label: '全部类型' },
+  { value: 'FILE', label: '工具' },
+  { value: 'LINK', label: '链接' },
+];
+
 function apply(): void {
   emit('search', {
     keyword: draft.keyword,
     tagIds: [...draft.tagIds],
     fileExts: [...draft.fileExts],
     scope: draft.scope,
+    toolType: draft.toolType,
     sortBy: draft.sortBy,
     sortOrder: draft.sortOrder,
   });
@@ -74,6 +84,13 @@ function apply(): void {
         @keyup.enter="apply"
         @clear="apply"
       />
+    </div>
+
+    <div class="tb-filter__item">
+      <span class="tb-filter__label">类型</span>
+      <el-select v-model="draft.toolType" placeholder="全部类型" @change="apply">
+        <el-option v-for="item in toolTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+      </el-select>
     </div>
 
     <div class="tb-filter__item">
