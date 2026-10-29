@@ -1,0 +1,167 @@
+/* ============================================================
+ * 主题：苹果风 · 液态玻璃（Liquid Glass）
+ *   macOS / iOS 观感：半透明液态玻璃铬件（侧栏 / 顶栏）+ 高对比加粗文字
+ *   + 大圆角 + 边缘高光 + 柔和多层阴影。
+ *
+ * 本文件 = 「写一份 CSS 就换一套主题」的示范：
+ *   上半部是一份 --tb-* 颜色令牌；下半部是一小段无法用令牌表达的「液态玻璃」铬件规则
+ *   （backdrop-filter / 渐变 / 高光）。
+ * 选择器一律以 html[data-theme='apple'] 开头提高优先级，以覆盖组件的 scoped 样式。
+ *
+ * ⚠️ 性能：backdrop-filter 属逐帧 GPU 合成；若挂在「宽度正在动画」的侧栏上会明显掉帧。
+ *     故侧栏在折叠/展开动画期间由组件挂 .is-animating 临时关闭模糊（见 AppLayout.vue）。
+ * ============================================================ */
+html[data-theme='apple'] {
+  /* ---- 内容区 ---- */
+  --tb-bg: #eef1f6;
+  --tb-panel: #ffffff;
+  --tb-panel-2: #f3f4f7;
+  --tb-panel-3: #eceef3;
+
+  /* ---- 分隔线（Apple hairline） ---- */
+  --tb-border: #d5d8de;
+  --tb-border-soft: #e9ebf0;
+
+  /* ---- 文字：整体加深一档，强化对比（修复"太虚"） ---- */
+  --tb-text: #14161a;
+  --tb-text-2: #3a3d42;
+  --tb-text-3: #63666c;
+
+  /* ---- 唯一强调色：Apple 蓝 ---- */
+  --tb-accent: #0071e3;
+  --tb-accent-hover: #0a84ff;
+  --tb-accent-soft: rgba(0, 113, 227, 0.13);
+
+  /* ---- 功能色（iOS 系） ---- */
+  --tb-success: #34c759;
+  --tb-success-soft: rgba(52, 199, 89, 0.16);
+  --tb-warning: #ff9f0a;
+  --tb-warning-soft: rgba(255, 159, 10, 0.16);
+  --tb-danger: #ff3b30;
+  --tb-danger-soft: rgba(255, 59, 48, 0.14);
+
+  /* ---- 交互底色 ---- */
+  --tb-row-hover: rgba(0, 0, 0, 0.045);
+
+  /* ---- 侧栏：半透明白（液态玻璃底），不用整块深色 ---- */
+  --tb-sider-bg: rgba(252, 252, 254, 0.7);
+  --tb-sider-bg-hover: rgba(0, 0, 0, 0.05);
+  --tb-sider-bg-active: rgba(0, 113, 227, 0.14);
+  --tb-sider-text: #1d1d1f;
+  --tb-sider-text-active: #004f9e;
+  --tb-sider-group: #6e6e73;
+  --tb-sider-border: rgba(0, 0, 0, 0.07);
+  --tb-brand-bg: transparent;
+  --tb-brand-text: #1d1d1f;
+
+  /* ---- 圆角（Apple 观感，比若依更圆） ---- */
+  --tb-radius-sm: 8px;
+  --tb-radius: 12px;
+  --tb-radius-lg: 18px;
+}
+
+/* ============ 铬件（液态玻璃 / 高光 / 阴影） ============ */
+
+/* 页面底色：多层柔光渐变 —— 给玻璃"可透内容"的层次与色彩 */
+html[data-theme='apple'] .tb-layout {
+  background:
+    radial-gradient(1200px 620px at 10% -4%, rgba(0, 113, 227, 0.12), transparent 58%),
+    radial-gradient(1000px 560px at 92% 6%, rgba(122, 90, 255, 0.1), transparent 55%),
+    radial-gradient(900px 700px at 62% 108%, rgba(0, 199, 190, 0.08), transparent 60%),
+    linear-gradient(160deg, #f3f6fb 0%, #f7f8fb 45%, #eef1f7 100%);
+}
+
+/* 液态玻璃基底：顶栏 + 侧栏半透明 + 背景模糊 + 轻微提饱和 */
+html[data-theme='apple'] .tb-layout__header,
+html[data-theme='apple'] .tb-layout__aside {
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+}
+
+/* 顶栏：竖向渐变 + 顶部 1px 高光 + 底部柔和层次 */
+html[data-theme='apple'] .tb-layout__header {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.66));
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 2px rgba(16, 24, 40, 0.05);
+}
+
+/* 侧栏：竖向渐变 + 右缘 1px 高光，像"一块浮起的玻璃" */
+html[data-theme='apple'] .tb-layout__aside {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.6));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset -1px 0 0 rgba(255, 255, 255, 0.45);
+}
+
+/* 折叠/展开动画期间临时关闭模糊 —— 避免逐帧重算造成的卡顿（关键性能修复） */
+html[data-theme='apple'] .tb-layout__aside.is-animating {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* 品牌字：克制的墨色渐变，更立体 */
+html[data-theme='apple'] .tb-layout__brand {
+  background: linear-gradient(180deg, #2b2f36, #111318);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: 0.3px;
+}
+
+/* 侧栏菜单：iOS 式圆角"液体胶囊" */
+html[data-theme='apple'] .tb-layout__menu .el-menu-item,
+html[data-theme='apple'] .tb-layout__menu .el-sub-menu__title {
+  margin: 2px 10px;
+  border-radius: 10px;
+}
+
+html[data-theme='apple'] .tb-layout__menu .el-menu-item {
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+html[data-theme='apple'] .tb-layout__menu .el-menu-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme='apple'] .tb-layout__menu .el-menu-item.is-active {
+  border-left: none;
+  background: linear-gradient(180deg, rgba(0, 113, 227, 0.17), rgba(0, 113, 227, 0.1));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 1px 2px rgba(0, 113, 227, 0.12);
+  color: var(--tb-sider-text-active);
+  font-weight: 600;
+}
+
+/* 卡片：半透明白 + 大圆角 + 柔和多层阴影（替换硬边框） */
+html[data-theme='apple'] .tb-card,
+html[data-theme='apple'] .el-card {
+  border-color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04),
+    0 12px 32px rgba(16, 24, 40, 0.08);
+}
+
+/* 主按钮：Apple 蓝微渐变 + 内高光 + 柔和投影
+   ⚠️ 只作用于「实心」按钮，必须排除 link / text / plain 变体：
+   表格操作列那些是链接型文字按钮（本就透明底 + 蓝字），
+   若被一并刷成蓝底，就会「蓝字印蓝底」→ 文字看不见。 */
+html[data-theme='apple'] .el-button--primary:not(.is-link):not(.is-text):not(.is-plain) {
+  background: linear-gradient(180deg, #1a8cff, #0071e3);
+  border-color: #0071e3;
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 2px 6px rgba(0, 113, 227, 0.28);
+}
+
+html[data-theme='apple'] .el-button--primary:not(.is-link):not(.is-text):not(.is-plain):hover,
+html[data-theme='apple'] .el-button--primary:not(.is-link):not(.is-text):not(.is-plain):focus {
+  background: linear-gradient(180deg, #2b97ff, #0a7ae8);
+  border-color: #0a7ae8;
+}

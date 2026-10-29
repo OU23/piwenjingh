@@ -1,0 +1,137 @@
+/* 全局基础样式；Element Plus 深色变量由 element-plus/theme-chalk/dark/css-vars.css 提供（见 main.ts） */
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--tb-bg);
+  color: var(--tb-text);
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: var(--tb-font);
+}
+
+a {
+  color: var(--tb-accent);
+  text-decoration: none;
+}
+
+/* 通用容器 */
+.tb-card {
+  background: var(--tb-panel);
+  border: 1px solid var(--tb-border);
+  border-radius: var(--tb-radius-lg);
+  padding: var(--tb-gap-lg);
+}
+
+.tb-panel {
+  background: var(--tb-panel-2);
+  border: 1px solid var(--tb-border);
+  border-radius: var(--tb-radius);
+  padding: var(--tb-gap);
+}
+
+.tb-title {
+  font-size: var(--tb-font-lg);
+  font-weight: 500;
+  margin: 0 0 var(--tb-gap) 0;
+}
+
+.tb-muted {
+  color: var(--tb-text-2);
+  font-size: var(--tb-font-xs);
+}
+
+/* 提示条（与原型一致：左侧色条 + 淡底） */
+.tb-note {
+  border-left: 3px solid var(--tb-warning);
+  background: var(--tb-warning-soft);
+  border-radius: 0 var(--tb-radius-sm) var(--tb-radius-sm) 0;
+  padding: var(--tb-gap-sm) var(--tb-gap);
+  font-size: var(--tb-font-xs);
+  color: var(--tb-text-2);
+  line-height: 1.7;
+}
+
+.tb-note.is-info {
+  border-left-color: var(--tb-accent);
+  background: var(--tb-accent-soft);
+}
+
+.tb-note.is-danger {
+  border-left-color: var(--tb-danger);
+  background: var(--tb-danger-soft);
+}
+
+/* 表格深色微调 */
+.el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: var(--tb-panel-2);
+  --el-table-border-color: var(--tb-border);
+}
+
+/* Bug 2 修复（v2）：Element Plus 2.x 固定列由 position:sticky 实现（DOM 上没有旧版
+   element-ui 的 .el-table__fixed-right 包装节点，v1 选择器不命中）。固定单元格需不透明背景，
+   否则横向滚动时下层单元格透出、操作列按钮叠在一起。仅作用于表体固定单元格
+   （表头由 --el-table-header-bg-color 控制本就不透明），保留普通单元格 transparent。 */
+.el-table .el-table__body .el-table-fixed-column--left,
+.el-table .el-table__body .el-table-fixed-column--right {
+  background-color: var(--tb-panel);
+}
+
+.el-table th.el-table__cell {
+  color: var(--tb-text-2);
+}
+
+/* ============================================================
+ * 全局：文字加粗（所有主题生效，消除"发虚"观感）
+ *   现状：正文 / 表格用 400 字重 + 偏灰的次级色 → 看起来虚。
+ *   说明：Windows 的「微软雅黑」只有 Regular / Bold 两档，取 600（映射到 Bold）
+ *         才会真正变粗；500 在该字库下会被当成 Regular（无变化）。
+ * ============================================================ */
+body {
+  font-weight: 500;
+}
+
+/* 表格：表头与单元格都提实 */
+.el-table th.el-table__cell,
+.el-table td.el-table__cell {
+  font-weight: 600;
+}
+
+/* 表单标签 / 描述项 / 选项标签（筛选栏那些"关键词/标签/格式"即属此类） */
+.el-form-item__label,
+.el-descriptions__label,
+.el-checkbox__label,
+.el-radio__label,
+.el-tabs__item {
+  font-weight: 600;
+}
+
+/* 次级 / 说明文字（原本最"虚"的那类） */
+.tb-muted,
+.tb-note {
+  font-weight: 600;
+}
+
+/* 路由切换过渡（参考若依 Vue 的 fade-transform）：淡入 + 轻微横向位移 */
+.fade-transform-enter-active,
+.fade-transform-leave-active {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.fade-transform-enter-from {
+  opacity: 0;
+  transform: translateX(-16px);
+}
+
+.fade-transform-leave-to {
+  opacity: 0;
+  transform: translateX(16px);
+}

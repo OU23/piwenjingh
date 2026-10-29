@@ -1,0 +1,50 @@
+/* ============================================================
+ * 主题：若依经典 · 蓝
+ *   浅色内容区 + 深色侧边栏（#2f4050）+ 主色 #1890ff
+ *
+ * 「一份主题 CSS = 一次全局换肤」：本文件只写 --tb-* 颜色值即可。
+ * 结构令牌（间距/字号/圆角）与 Element Plus 桥接见 styles/tokens.css，对所有主题通用。
+ *   新增主题 = 复制本文件、改选择器 key 与配色；再到 stores/theme.ts 的 THEMES 加一行。
+ *   选择器用 html[data-theme="<key>"]，key 与 THEMES 里的 key 对应。
+ * ============================================================ */
+html[data-theme='ruoyi-blue'] {
+  /* ---- 内容区（浅色） ---- */
+  --tb-bg: #f0f2f5;
+  --tb-panel: #ffffff;
+  --tb-panel-2: #f7f8fa;
+  --tb-panel-3: #f7f8fa;
+
+  /* ---- 边框 ---- */
+  --tb-border: #e5e7eb;
+  --tb-border-soft: #f0f2f5;
+
+  /* ---- 文字（浅底深字） ---- */
+  --tb-text: #1f2d3d;
+  --tb-text-2: #606266;
+  --tb-text-3: #909399;
+
+  /* ---- 语义色（若依） ---- */
+  --tb-accent: #1890ff;
+  --tb-accent-hover: #40a9ff;
+  --tb-accent-soft: rgba(24, 144, 255, 0.1);
+  --tb-success: #52c41a;
+  --tb-success-soft: rgba(82, 196, 26, 0.12);
+  --tb-warning: #faad14;
+  --tb-warning-soft: rgba(250, 173, 20, 0.1);
+  --tb-danger: #f5222d;
+  --tb-danger-soft: rgba(245, 34, 45, 0.1);
+
+  /* ---- 交互底色 ---- */
+  --tb-row-hover: rgba(0, 0, 0, 0.03);
+
+  /* ---- 深色侧边栏（若依经典） ---- */
+  --tb-sider-bg: #2f4050;
+  --tb-sider-bg-hover: #293846;
+  --tb-sider-bg-active: #293846;
+  --tb-sider-text: #b8c7ce;
+  --tb-sider-text-active: #ffffff;
+  --tb-sider-group: #8095a8;
+  --tb-sider-border: #3a4b5c;
+  --tb-brand-bg: #1890ff;
+  --tb-brand-text: #ffffff;
+}

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ruoyi-blue">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>tool-box 工具管理箱</title>
+    <script>
+      // 首屏前应用已保存主题，避免闪烁（键名与 src/stores/theme.ts 一致）
+      (function () {
+        try {
+          var t = localStorage.getItem('toolbox-theme');
+          if (t) document.documentElement.setAttribute('data-theme', t);
+        } catch (e) {
+          /* 忽略 */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

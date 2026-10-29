@@ -1,0 +1,46 @@
+{
+  "name": "toolbox-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "tool-box 工具管理箱 · 前端（Vue3 + TypeScript + Vite + Element Plus）",
+  "engines": {
+    "node": ">=20 <21"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "lint": "eslint . --ext .ts,.vue",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "2.3.1",
+    "ali-oss": "6.23.0",
+    "axios": "1.7.2",
+    "element-plus": "2.7.6",
+    "pinia": "2.1.7",
+    "vue": "3.4.27",
+    "vue-router": "4.3.2"
+  },
+  "devDependencies": {
+    "@types/ali-oss": "6.23.3",
+    "@types/node": "20.14.9",
+    "@typescript-eslint/eslint-plugin": "7.13.1",
+    "@typescript-eslint/parser": "7.13.1",
+    "@vitejs/plugin-vue": "5.0.5",
+    "@vue/test-utils": "2.4.6",
+    "eslint": "8.57.0",
+    "eslint-config-prettier": "9.1.0",
+    "eslint-plugin-vue": "9.23.0",
+    "jsdom": "24.0.0",
+    "prettier": "3.3.2",
+    "typescript": "5.4.5",
+    "vite": "5.2.13",
+    "vitest": "1.6.0",
+    "vue-tsc": "2.2.12"
+  }
+}
